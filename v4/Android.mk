@@ -184,4 +184,5 @@ LOCAL_SRC_FILES := $(call all-java-files-under, java) \
 
 LOCAL_STATIC_JAVA_LIBRARIES += android-support-v4-api21
 LOCAL_STATIC_JAVA_LIBRARIES += android-support-annotations
+LOCAL_JAVA_LIBRARIES := framework
 include $(BUILD_STATIC_JAVA_LIBRARY)
