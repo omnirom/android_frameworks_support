@@ -54,8 +54,16 @@ public class MediaRouteControllerDialogFragment extends DialogFragment {
 
     @Override
     public Dialog onCreateDialog(Bundle savedInstanceState) {
-        mDialog = onCreateControllerDialog(getActivity(), savedInstanceState);
+        mDialog = onCreateControllerDialog(getContext(), savedInstanceState);
         return mDialog;
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        if (mDialog != null) {
+            mDialog.clearGroupListAnimation(false);
+        }
     }
 
     @Override

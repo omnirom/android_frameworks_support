@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import static org.junit.Assert.*;
 
 /**
  * Base class for animation related tests.
@@ -44,11 +45,6 @@ public class BaseRecyclerViewAnimationsTest extends BaseRecyclerViewInstrumentat
 
     public BaseRecyclerViewAnimationsTest() {
         super(DEBUG);
-    }
-
-    @Override
-    protected void setUp() throws Exception {
-        super.setUp();
     }
 
     RecyclerView setupBasic(int itemCount) throws Throwable {
@@ -210,12 +206,6 @@ public class BaseRecyclerViewAnimationsTest extends BaseRecyclerViewInstrumentat
 
         public void onPostDispatchLayout() {
             mOnLayoutCallbacks.postDispatchLayout();
-        }
-
-        @Override
-        public void waitForLayout(long timeout, TimeUnit timeUnit) throws Throwable {
-            super.waitForLayout(timeout, timeUnit);
-            checkForMainThreadException();
         }
     }
 
@@ -649,6 +639,14 @@ public class BaseRecyclerViewAnimationsTest extends BaseRecyclerViewInstrumentat
             }
             setFrom(viewHolder);
         }
+
+        @Override
+        public String toString() {
+            return "LoggingInfo{" +
+                    "changeFlags=" + changeFlags +
+                    ", payloads=" + payloads +
+                    '}';
+        }
     }
 
     static class AnimateChange extends AnimateLogBase {
@@ -685,15 +683,23 @@ public class BaseRecyclerViewAnimationsTest extends BaseRecyclerViewInstrumentat
     }
     static class AnimateLogBase {
 
-        final RecyclerView.ViewHolder viewHolder;
-        final LoggingInfo preInfo;
-        final LoggingInfo postInfo;
+        public final RecyclerView.ViewHolder viewHolder;
+        public final LoggingInfo preInfo;
+        public final LoggingInfo postInfo;
 
         public AnimateLogBase(RecyclerView.ViewHolder viewHolder, LoggingInfo pre,
                 LoggingInfo postInfo) {
             this.viewHolder = viewHolder;
             this.preInfo = pre;
             this.postInfo = postInfo;
+        }
+
+        public String log() {
+            return getClass().getSimpleName() + "[" +  log(preInfo) + " - " + log(postInfo) + "]";
+        }
+
+        public String log(LoggingInfo info) {
+            return info == null ? "null" : info.toString();
         }
 
         @Override

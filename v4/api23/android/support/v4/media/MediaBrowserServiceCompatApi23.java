@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 The Android Open Source Project
+ * Copyright (C) 2016 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,71 +16,31 @@
 
 package android.support.v4.media;
 
+import android.content.Context;
 import android.media.browse.MediaBrowser;
-import android.os.Bundle;
 import android.os.Parcel;
-import android.os.ResultReceiver;
-import android.service.media.MediaBrowserService;
-import android.util.Log;
+import android.support.v4.media.MediaBrowserServiceCompatApi21.ResultWrapper;
 
-class MediaBrowserServiceCompatApi23 extends MediaBrowserServiceCompatApi21 {
-    private static final String TAG = "MediaBrowserServiceCompatApi21";
+class MediaBrowserServiceCompatApi23 {
 
-    public static Object createService() {
-        return new MediaBrowserServiceAdaptorApi23();
+    public static Object createService(Context context, ServiceCompatProxy serviceProxy) {
+        return new MediaBrowserServiceAdaptor(context, serviceProxy);
     }
 
-    public static void onCreate(Object serviceObj, ServiceImplApi23 serviceImpl) {
-        ((MediaBrowserServiceAdaptorApi23) serviceObj).onCreate(serviceImpl);
+    public interface ServiceCompatProxy extends MediaBrowserServiceCompatApi21.ServiceCompatProxy {
+        void onLoadItem(String itemId, ResultWrapper<Parcel> result);
     }
 
-    public interface ServiceImplApi23 extends ServiceImplApi21 {
-        void getMediaItem(final String mediaId, final ItemCallback cb);
-    }
-
-    public interface ItemCallback {
-        void onItemLoaded(int resultCode, Bundle resultData, Parcel itemParcel);
-    }
-
-    static class MediaBrowserServiceAdaptorApi23 extends MediaBrowserServiceAdaptorApi21 {
-
-        public void onCreate(ServiceImplApi23 serviceImpl) {
-            mBinder = new ServiceBinderProxyApi23(serviceImpl);
+    static class MediaBrowserServiceAdaptor extends
+            MediaBrowserServiceCompatApi21.MediaBrowserServiceAdaptor {
+        MediaBrowserServiceAdaptor(Context context, ServiceCompatProxy serviceWrapper) {
+            super(context, serviceWrapper);
         }
 
-        private static class ServiceBinderProxyApi23 extends ServiceBinderProxyApi21 {
-            ServiceImplApi23 mServiceImpl;
-
-            ServiceBinderProxyApi23(ServiceImplApi23 serviceImpl) {
-                super(serviceImpl);
-                mServiceImpl = serviceImpl;
-            }
-
-            @Override
-            public void getMediaItem(final String mediaId, final ResultReceiver receiver) {
-                final String KEY_MEDIA_ITEM;
-                try {
-                    KEY_MEDIA_ITEM = (String) MediaBrowserService.class.getDeclaredField(
-                            "KEY_MEDIA_ITEM").get(null);
-                } catch (IllegalAccessException | NoSuchFieldException e) {
-                    Log.i(TAG, "Failed to get KEY_MEDIA_ITEM via reflection", e);
-                    return;
-                }
-
-                mServiceImpl.getMediaItem(mediaId, new ItemCallback() {
-                    @Override
-                    public void onItemLoaded(int resultCode, Bundle resultData, Parcel itemParcel) {
-                        if (itemParcel != null) {
-                            itemParcel.setDataPosition(0);
-                            MediaBrowser.MediaItem item =
-                                    MediaBrowser.MediaItem.CREATOR.createFromParcel(itemParcel);
-                            resultData.putParcelable(KEY_MEDIA_ITEM, item);
-                            itemParcel.recycle();
-                        }
-                        receiver.send(resultCode, resultData);
-                    }
-                });
-            }
+        @Override
+        public void onLoadItem(String itemId, Result<MediaBrowser.MediaItem> result) {
+            ((ServiceCompatProxy) mServiceProxy).onLoadItem(itemId,
+                    new ResultWrapper<Parcel>(result));
         }
     }
 }

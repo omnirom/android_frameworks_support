@@ -21,6 +21,7 @@ import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.support.annotation.ColorInt;
 import android.support.annotation.ColorRes;
+import android.support.annotation.VisibleForTesting;
 import android.support.v4.view.MotionEventCompat;
 import android.support.v4.view.NestedScrollingChild;
 import android.support.v4.view.NestedScrollingChildHelper;
@@ -68,13 +69,15 @@ public class SwipeRefreshLayout extends ViewGroup implements NestedScrollingPare
     // Maps to ProgressBar default style
     public static final int DEFAULT = MaterialProgressDrawable.DEFAULT;
 
+    @VisibleForTesting
+    static final int CIRCLE_DIAMETER = 40;
+    @VisibleForTesting
+    static final int CIRCLE_DIAMETER_LARGE = 56;
+
     private static final String LOG_TAG = SwipeRefreshLayout.class.getSimpleName();
 
     private static final int MAX_ALPHA = 255;
     private static final int STARTING_PROGRESS_ALPHA = (int) (.3f * MAX_ALPHA);
-
-    private static final int CIRCLE_DIAMETER = 40;
-    private static final int CIRCLE_DIAMETER_LARGE = 56;
 
     private static final float DECELERATE_INTERPOLATION_FACTOR = 2f;
     private static final int INVALID_POINTER = -1;
@@ -538,8 +541,7 @@ public class SwipeRefreshLayout extends ViewGroup implements NestedScrollingPare
      *
      * @param colors
      */
-    @ColorInt
-    public void setColorSchemeColors(int... colors) {
+    public void setColorSchemeColors(@ColorInt int... colors) {
         ensureTarget();
         mProgress.setColorSchemeColors(colors);
     }
@@ -744,7 +746,7 @@ public class SwipeRefreshLayout extends ViewGroup implements NestedScrollingPare
 
     @Override
     public boolean onStartNestedScroll(View child, View target, int nestedScrollAxes) {
-        return isEnabled() && canChildScrollUp() && !mReturningToStart && !mRefreshing
+        return isEnabled() && !mReturningToStart && !mRefreshing
                 && (nestedScrollAxes & ViewCompat.SCROLL_AXIS_VERTICAL) != 0;
     }
 
@@ -769,7 +771,6 @@ public class SwipeRefreshLayout extends ViewGroup implements NestedScrollingPare
             } else {
                 mTotalUnconsumed -= dy;
                 consumed[1] = dy;
-
             }
             moveSpinner(mTotalUnconsumed);
         }
@@ -823,7 +824,7 @@ public class SwipeRefreshLayout extends ViewGroup implements NestedScrollingPare
         // 'offset in window 'functionality to see if we have been moved from the event.
         // This is a decent indication of whether we should take over the event stream or not.
         final int dy = dyUnconsumed + mParentOffsetInWindow[1];
-        if (dy < 0) {
+        if (dy < 0 && !canChildScrollUp()) {
             mTotalUnconsumed += Math.abs(dy);
             moveSpinner(mTotalUnconsumed);
         }
@@ -918,24 +919,26 @@ public class SwipeRefreshLayout extends ViewGroup implements NestedScrollingPare
             ViewCompat.setScaleX(mCircleView, 1f);
             ViewCompat.setScaleY(mCircleView, 1f);
         }
+
+        if (mScale) {
+            setAnimationProgress(Math.min(1f, overscrollTop / mTotalDragDistance));
+        }
         if (overscrollTop < mTotalDragDistance) {
-            if (mScale) {
-                setAnimationProgress(overscrollTop / mTotalDragDistance);
-            }
             if (mProgress.getAlpha() > STARTING_PROGRESS_ALPHA
                     && !isAnimationRunning(mAlphaStartAnimation)) {
                 // Animate the alpha
                 startProgressAlphaStartAnimation();
             }
-            float strokeStart = adjustedPercent * .8f;
-            mProgress.setStartEndTrim(0f, Math.min(MAX_PROGRESS_ANGLE, strokeStart));
-            mProgress.setArrowScale(Math.min(1f, adjustedPercent));
         } else {
             if (mProgress.getAlpha() < MAX_ALPHA && !isAnimationRunning(mAlphaMaxAnimation)) {
                 // Animate the alpha
                 startProgressAlphaMaxAnimation();
             }
         }
+        float strokeStart = adjustedPercent * .8f;
+        mProgress.setStartEndTrim(0f, Math.min(MAX_PROGRESS_ANGLE, strokeStart));
+        mProgress.setArrowScale(Math.min(1f, adjustedPercent));
+
         float rotation = (-0.25f + .4f * adjustedPercent + tensionPercent * 2) * .5f;
         mProgress.setProgressRotation(rotation);
         setTargetOffsetTopAndBottom(targetY - mCurrentTargetOffsetTop, true /* requires update */);

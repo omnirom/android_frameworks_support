@@ -24,6 +24,7 @@ import android.support.test.InstrumentationRegistry;
 import android.support.test.runner.AndroidJUnit4;
 import android.test.AndroidTestCase;
 import android.test.mock.MockContext;
+import android.test.suitebuilder.annotation.SmallTest;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -31,6 +32,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @RunWith(AndroidJUnit4.class)
+@SmallTest
 public class ChildHelperTest extends AndroidTestCase {
     LoggingCallback  mLoggingCallback;
     ChildHelper mChildHelper;
@@ -54,7 +56,7 @@ public class ChildHelperTest extends AndroidTestCase {
     }
 
     @Test
-    public void testAddChild() {
+    public void addChild() {
         RecyclerView.ViewHolder vh = vh();
         mChildHelper.addView(vh.itemView, false);
         assertEquals(1, mLoggingCallback.getChildCount());
@@ -63,7 +65,7 @@ public class ChildHelperTest extends AndroidTestCase {
     }
 
     @Test
-    public void testAddChildHidden() {
+    public void addChildHidden() {
         RecyclerView.ViewHolder vh = vh();
         mChildHelper.addView(vh.itemView, true);
         assertEquals(1, mLoggingCallback.getChildCount());
@@ -72,7 +74,7 @@ public class ChildHelperTest extends AndroidTestCase {
     }
 
     @Test
-    public void testAddChildAndHide() {
+    public void addChildAndHide() {
         RecyclerView.ViewHolder vh = vh();
         mChildHelper.addView(vh.itemView, false);
         mChildHelper.hide(vh.itemView);
@@ -82,7 +84,7 @@ public class ChildHelperTest extends AndroidTestCase {
     }
 
     @Test
-    public void testFindHiddenNonRemoved() {
+    public void findHiddenNonRemoved() {
         RecyclerView.ViewHolder vh = vh();
         vh.mPosition = 12;
         mChildHelper.addView(vh.itemView, true);
@@ -91,7 +93,7 @@ public class ChildHelperTest extends AndroidTestCase {
     }
 
     @Test
-    public void testFindHiddenRemoved() {
+    public void findHiddenRemoved() {
         RecyclerView.ViewHolder vh = vh();
         vh.mPosition = 12;
         vh.addFlags(RecyclerView.ViewHolder.FLAG_REMOVED);
@@ -167,11 +169,6 @@ public class ChildHelperTest extends AndroidTestCase {
         @Override
         public void onLeftHiddenState(View child) {
             mOnExitedHiddenState.add(child);
-        }
-
-        public void clearHiddenStateLog() {
-            mOnExitedHiddenState.clear();
-            mOnEnteredHiddenState.clear();
         }
     }
 }

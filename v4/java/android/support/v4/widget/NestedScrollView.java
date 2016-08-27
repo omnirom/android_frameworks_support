@@ -46,7 +46,6 @@ import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
-import android.view.ViewDebug;
 import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.accessibility.AccessibilityEvent;
@@ -286,7 +285,7 @@ public class NestedScrollView extends FrameLayout implements NestedScrollingPare
 
     @Override
     public void onNestedPreScroll(View target, int dx, int dy, int[] consumed) {
-        // Do nothing
+        dispatchNestedPreScroll(dx, dy, consumed, null);
     }
 
     @Override
@@ -300,8 +299,7 @@ public class NestedScrollView extends FrameLayout implements NestedScrollingPare
 
     @Override
     public boolean onNestedPreFling(View target, float velocityX, float velocityY) {
-        // Do nothing
-        return false;
+        return dispatchNestedPreFling(velocityX, velocityY);
     }
 
     @Override
@@ -355,7 +353,7 @@ public class NestedScrollView extends FrameLayout implements NestedScrollingPare
     }
 
     private void initScrollView() {
-        mScroller = new ScrollerCompat(getContext(), null);
+        mScroller = ScrollerCompat.create(getContext(), null);
         setFocusable(true);
         setDescendantFocusability(FOCUS_AFTER_DESCENDANTS);
         setWillNotDraw(false);
@@ -431,7 +429,7 @@ public class NestedScrollView extends FrameLayout implements NestedScrollingPare
      *
      * @return True if the content fills the viewport, false otherwise.
      *
-     * @attr ref android.R.styleable#ScrollView_fillViewport
+     * @attr name android:fillViewport
      */
     public boolean isFillViewport() {
         return mFillViewport;
@@ -444,7 +442,7 @@ public class NestedScrollView extends FrameLayout implements NestedScrollingPare
      * @param fillViewport True to stretch the content's height to the viewport's
      *        boundaries, false otherwise.
      *
-     * @attr ref android.R.styleable#ScrollView_fillViewport
+     * @attr name android:fillViewport
      */
     public void setFillViewport(boolean fillViewport) {
         if (fillViewport != mFillViewport) {
@@ -683,10 +681,12 @@ public class NestedScrollView extends FrameLayout implements NestedScrollingPare
                 initOrResetVelocityTracker();
                 mVelocityTracker.addMovement(ev);
                 /*
-                * If being flinged and user touches the screen, initiate drag;
-                * otherwise don't.  mScroller.isFinished should be false when
-                * being flinged.
+                 * If being flinged and user touches the screen, initiate drag;
+                 * otherwise don't. mScroller.isFinished should be false when
+                 * being flinged. We need to call computeScrollOffset() first so that
+                 * isFinished() is correct.
                 */
+                mScroller.computeScrollOffset();
                 mIsBeingDragged = !mScroller.isFinished();
                 startNestedScroll(ViewCompat.SCROLL_AXIS_VERTICAL);
                 break;
@@ -1647,6 +1647,8 @@ public class NestedScrollView extends FrameLayout implements NestedScrollingPare
 
     @Override
     public void onAttachedToWindow() {
+        super.onAttachedToWindow();
+
         mIsLaidOut = false;
     }
 
@@ -1820,6 +1822,11 @@ public class NestedScrollView extends FrameLayout implements NestedScrollingPare
 
     @Override
     protected void onRestoreInstanceState(Parcelable state) {
+        if (!(state instanceof SavedState)) {
+            super.onRestoreInstanceState(state);
+            return;
+        }
+
         SavedState ss = (SavedState) state;
         super.onRestoreInstanceState(ss.getSuperState());
         mSavedState = ss;

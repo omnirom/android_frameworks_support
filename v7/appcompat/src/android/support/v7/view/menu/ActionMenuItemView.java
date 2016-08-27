@@ -23,14 +23,18 @@ import android.content.res.TypedArray;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+import android.os.Parcelable;
+import android.support.v4.content.res.ConfigurationHelper;
 import android.support.v4.view.GravityCompat;
 import android.support.v4.view.ViewCompat;
 import android.support.v7.appcompat.R;
 import android.support.v7.widget.ActionMenuView;
 import android.support.v7.widget.AppCompatTextView;
+import android.support.v7.widget.ForwardingListener;
 import android.support.v7.widget.ListPopupWindow;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -49,7 +53,7 @@ public class ActionMenuItemView extends AppCompatTextView
     private CharSequence mTitle;
     private Drawable mIcon;
     private MenuBuilder.ItemInvoker mItemInvoker;
-    private ListPopupWindow.ForwardingListener mForwardingListener;
+    private ForwardingListener mForwardingListener;
     private PopupCallback mPopupCallback;
 
     private boolean mAllowTextWithIcon;
@@ -71,8 +75,7 @@ public class ActionMenuItemView extends AppCompatTextView
     public ActionMenuItemView(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
         final Resources res = context.getResources();
-        mAllowTextWithIcon = res.getBoolean(
-                R.bool.abc_config_allowActionMenuItemTextWithIcon);
+        mAllowTextWithIcon = shouldAllowTextWithIcon();
         TypedArray a = context.obtainStyledAttributes(attrs,
                 R.styleable.ActionMenuItemView, defStyle, 0);
         mMinWidth = a.getDimensionPixelSize(
@@ -86,6 +89,7 @@ public class ActionMenuItemView extends AppCompatTextView
         setOnLongClickListener(this);
 
         mSavedPaddingLeft = -1;
+        setSaveEnabled(false);
     }
 
     public void onConfigurationChanged(Configuration newConfig) {
@@ -93,9 +97,21 @@ public class ActionMenuItemView extends AppCompatTextView
             super.onConfigurationChanged(newConfig);
         }
 
-        mAllowTextWithIcon = getContext().getResources().getBoolean(
-                R.bool.abc_config_allowActionMenuItemTextWithIcon);
+        mAllowTextWithIcon = shouldAllowTextWithIcon();
         updateTextButtonVisibility();
+    }
+
+    /**
+     * Whether action menu items should obey the "withText" showAsAction flag. This may be set to
+     * false for situations where space is extremely limited. -->
+     */
+    private boolean shouldAllowTextWithIcon() {
+        final Configuration config = getContext().getResources().getConfiguration();
+        final int widthDp = ConfigurationHelper.getScreenWidthDp(getResources());
+        final int heightDp = ConfigurationHelper.getScreenHeightDp(getResources());
+
+        return widthDp >= 480 || (widthDp >= 640 && heightDp >= 480)
+                || config.orientation == Configuration.ORIENTATION_LANDSCAPE;
     }
 
     @Override
@@ -291,13 +307,13 @@ public class ActionMenuItemView extends AppCompatTextView
         }
     }
 
-    private class ActionMenuItemForwardingListener extends ListPopupWindow.ForwardingListener {
+    private class ActionMenuItemForwardingListener extends ForwardingListener {
         public ActionMenuItemForwardingListener() {
             super(ActionMenuItemView.this);
         }
 
         @Override
-        public ListPopupWindow getPopup() {
+        public ShowableListMenu getPopup() {
             if (mPopupCallback != null) {
                 return mPopupCallback.getPopup();
             }
@@ -308,7 +324,7 @@ public class ActionMenuItemView extends AppCompatTextView
         protected boolean onForwardingStarted() {
             // Call the invoker, then check if the expected popup is showing.
             if (mItemInvoker != null && mItemInvoker.invokeItem(mItemData)) {
-                final ListPopupWindow popup = getPopup();
+                final ShowableListMenu popup = getPopup();
                 return popup != null && popup.isShowing();
             }
             return false;
@@ -322,7 +338,14 @@ public class ActionMenuItemView extends AppCompatTextView
         // return false and make ListPopupWindow think it's still forwarding.
     }
 
+    @Override
+    public void onRestoreInstanceState(Parcelable state) {
+        // This might get called with the state of ActionView since it shares the same ID with
+        // ActionMenuItemView. Do not restore this state as ActionMenuItemView never saved it.
+        super.onRestoreInstanceState(null);
+    }
+
     public static abstract class PopupCallback {
-        public abstract ListPopupWindow getPopup();
+        public abstract ShowableListMenu getPopup();
     }
 }

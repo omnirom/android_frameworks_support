@@ -16,7 +16,7 @@
     -->
 
 <resources>
-    <declare-styleable name="Theme">
+    <declare-styleable name="PreferenceTheme">
 
         <!-- =================== -->
         <!-- Preference styles   -->
@@ -50,6 +50,8 @@
         <attr name="editTextPreferenceStyle" format="reference" />
         <!-- Default style for RingtonePreference. -->
         <attr name="ringtonePreferenceStyle" format="reference" />
+        <!-- Default style for DropDownPreference. -->
+        <attr name="dropdownPreferenceStyle" format="reference" />
         <!-- The preference layout that has the child/tabbed effect. -->
         <attr name="preferenceLayoutChild" format="reference" />
         <!-- Preference panel style -->
@@ -243,6 +245,13 @@
         <attr name="android:maxWidth" />
         <attr name="maxHeight" format="dimension" />
         <attr name="android:maxHeight" />
+    </declare-styleable>
+
+    <!-- Used to access some android attrs -->
+    <declare-styleable name="BackgroundStyle">
+        <attr name="android:selectableItemBackground" />
+        <!-- Need a non-android: attr here so that gradle doesn't remove it -->
+        <attr name="selectableItemBackground" />
     </declare-styleable>
 
 </resources>

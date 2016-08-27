@@ -41,11 +41,13 @@
             android:transitionGroup="true"
             android:id="@+id/guidedactions_list"
             style="?attr/guidedActionsListStyle" />
+        <android.support.v17.leanback.widget.VerticalGridView
+            android:transitionGroup="true"
+            android:id="@+id/guidedactions_sub_list"
+            style="?attr/guidedSubActionsListStyle"
+            android:visibility="invisible"
+            android:background="?attr/guidedActionsBackgroundDark" />
 
-        <android.support.v17.leanback.widget.NonOverlappingView
-            android:id="@+id/guidedactions_selector"
-            android:transitionName="guidedactions_selector"
-            style="?attr/guidedActionsSelectorStyle" />
     </android.support.v17.leanback.widget.NonOverlappingFrameLayout>
 
 </RelativeLayout>

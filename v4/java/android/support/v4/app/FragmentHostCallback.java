@@ -19,6 +19,8 @@ package android.support.v4.app;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentSender;
+import android.os.Bundle;
 import android.os.Handler;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -115,11 +117,35 @@ public abstract class FragmentHostCallback<E> extends FragmentContainer {
      * See {@link FragmentActivity#startActivityForResult(Intent, int)}.
      */
     public void onStartActivityFromFragment(Fragment fragment, Intent intent, int requestCode) {
+        onStartActivityFromFragment(fragment, intent, requestCode, null);
+    }
+
+    /**
+     * Starts a new {@link Activity} from the given fragment.
+     * See {@link FragmentActivity#startActivityForResult(Intent, int, Bundle)}.
+     */
+    public void onStartActivityFromFragment(
+            Fragment fragment, Intent intent, int requestCode, @Nullable Bundle options) {
         if (requestCode != -1) {
             throw new IllegalStateException(
                     "Starting activity with a requestCode requires a FragmentActivity host");
         }
         mContext.startActivity(intent);
+    }
+
+    /**
+     * Starts a new {@link IntentSender} from the given fragment.
+     * See {@link Activity#startIntentSender(IntentSender, Intent, int, int, int, Bundle)}.
+     */
+    public void onStartIntentSenderFromFragment(Fragment fragment, IntentSender intent,
+            int requestCode, @Nullable Intent fillInIntent, int flagsMask, int flagsValues,
+            int extraFlags, Bundle options) throws IntentSender.SendIntentException {
+        if (requestCode != -1) {
+            throw new IllegalStateException(
+                    "Starting intent sender with a requestCode requires a FragmentActivity host");
+        }
+        ActivityCompat.startIntentSenderForResult(mActivity, intent, requestCode, fillInIntent,
+                flagsMask, flagsValues, extraFlags, options);
     }
 
     /**
@@ -292,15 +318,22 @@ public abstract class FragmentHostCallback<E> extends FragmentContainer {
     SimpleArrayMap<String, LoaderManager> retainLoaderNonConfig() {
         boolean retainLoaders = false;
         if (mAllLoaderManagers != null) {
-            // prune out any loader managers that were already stopped and so
-            // have nothing useful to retain.
+            // Restart any loader managers that were already stopped so that they
+            // will be ready to retain
             final int N = mAllLoaderManagers.size();
             LoaderManagerImpl loaders[] = new LoaderManagerImpl[N];
             for (int i=N-1; i>=0; i--) {
                 loaders[i] = (LoaderManagerImpl) mAllLoaderManagers.valueAt(i);
             }
+            final boolean doRetainLoaders = getRetainLoaders();
             for (int i=0; i<N; i++) {
                 LoaderManagerImpl lm = loaders[i];
+                if (!lm.mRetaining && doRetainLoaders) {
+                    if (!lm.mStarted) {
+                        lm.doStart();
+                    }
+                    lm.doRetain();
+                }
                 if (lm.mRetaining) {
                     retainLoaders = true;
                 } else {

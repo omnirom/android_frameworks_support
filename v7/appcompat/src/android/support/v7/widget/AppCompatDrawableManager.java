@@ -16,31 +16,44 @@
 
 package android.support.v7.widget;
 
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserException;
+
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.content.res.Resources;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
-import android.graphics.drawable.DrawableContainer;
-import android.graphics.drawable.InsetDrawable;
+import android.graphics.drawable.Drawable.ConstantState;
 import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.os.Build;
+import android.support.annotation.ColorInt;
 import android.support.annotation.DrawableRes;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.graphics.drawable.AnimatedVectorDrawableCompat;
+import android.support.graphics.drawable.VectorDrawableCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v4.graphics.ColorUtils;
 import android.support.v4.graphics.drawable.DrawableCompat;
+import android.support.v4.util.ArrayMap;
+import android.support.v4.util.LongSparseArray;
 import android.support.v4.util.LruCache;
 import android.support.v7.appcompat.R;
+import android.support.v7.widget.VectorEnabledTintResources;
+import android.util.AttributeSet;
 import android.util.Log;
 import android.util.SparseArray;
+import android.util.TypedValue;
+import android.util.Xml;
 
-import java.util.ArrayList;
+import java.lang.ref.WeakReference;
 import java.util.WeakHashMap;
 
+import static android.support.v7.content.res.AppCompatResources.getColorStateList;
 import static android.support.v7.widget.ThemeUtils.getDisabledThemeAttrColor;
 import static android.support.v7.widget.ThemeUtils.getThemeAttrColor;
 import static android.support.v7.widget.ThemeUtils.getThemeAttrColorStateList;
@@ -50,30 +63,40 @@ import static android.support.v7.widget.ThemeUtils.getThemeAttrColorStateList;
  */
 public final class AppCompatDrawableManager {
 
-    public interface InflateDelegate {
-        /**
-         * Allows custom inflation of a drawable resource.
-         *
-         * @param context Context to inflate/create with
-         * @param resId Resource ID of the drawable
-         * @return the created drawable, or {@code null} to leave inflation to
-         * AppCompatDrawableManager.
-         */
-        @Nullable
-        Drawable onInflateDrawable(@NonNull Context context, @DrawableRes int resId);
+    private interface InflateDelegate {
+        Drawable createFromXmlInner(@NonNull Context context, @NonNull XmlPullParser parser,
+                @NonNull AttributeSet attrs, @Nullable Resources.Theme theme);
     }
 
-    private static final String TAG = "TintManager";
+    private static final String TAG = "AppCompatDrawableManager";
     private static final boolean DEBUG = false;
     private static final PorterDuff.Mode DEFAULT_MODE = PorterDuff.Mode.SRC_IN;
+    private static final String SKIP_DRAWABLE_TAG = "appcompat_skip_skip";
+
+    private static final String PLATFORM_VD_CLAZZ = "android.graphics.drawable.VectorDrawable";
 
     private static AppCompatDrawableManager INSTANCE;
 
     public static AppCompatDrawableManager get() {
         if (INSTANCE == null) {
             INSTANCE = new AppCompatDrawableManager();
+            installDefaultInflateDelegates(INSTANCE);
         }
         return INSTANCE;
+    }
+
+    private static void installDefaultInflateDelegates(@NonNull AppCompatDrawableManager manager) {
+        final int sdk = Build.VERSION.SDK_INT;
+        if (sdk < 23) {
+            // We only want to use the automatic VectorDrawableCompat handling where it's
+            // needed: on devices running before Lollipop
+            manager.addDelegate("vector", new VdcInflateDelegate());
+
+            if (sdk >= 11) {
+                // AnimatedVectorDrawableCompat only works on API v11+
+                manager.addDelegate("animated-vector", new AvdcInflateDelegate());
+            }
+        }
     }
 
     private static final ColorFilterLruCache COLOR_FILTER_CACHE = new ColorFilterLruCache(6);
@@ -93,18 +116,13 @@ public final class AppCompatDrawableManager {
      * {@link DrawableCompat}'s tinting functionality.
      */
     private static final int[] TINT_COLOR_CONTROL_NORMAL = {
-            R.drawable.abc_ic_ab_back_mtrl_am_alpha,
-            R.drawable.abc_ic_go_search_api_mtrl_alpha,
-            R.drawable.abc_ic_search_api_mtrl_alpha,
             R.drawable.abc_ic_commit_search_api_mtrl_alpha,
-            R.drawable.abc_ic_clear_mtrl_alpha,
+            R.drawable.abc_seekbar_tick_mark_material,
             R.drawable.abc_ic_menu_share_mtrl_alpha,
             R.drawable.abc_ic_menu_copy_mtrl_am_alpha,
             R.drawable.abc_ic_menu_cut_mtrl_alpha,
             R.drawable.abc_ic_menu_selectall_mtrl_alpha,
-            R.drawable.abc_ic_menu_paste_mtrl_am_alpha,
-            R.drawable.abc_ic_menu_moreoverflow_mtrl_alpha,
-            R.drawable.abc_ic_voice_search_api_mtrl_alpha
+            R.drawable.abc_ic_menu_paste_mtrl_am_alpha
     };
 
     /**
@@ -133,16 +151,8 @@ public final class AppCompatDrawableManager {
      * {@code R.attr.colorControlNormal} and {@code R.attr.colorControlActivated}
      */
     private static final int[] TINT_COLOR_CONTROL_STATE_LIST = {
-            R.drawable.abc_edit_text_material,
             R.drawable.abc_tab_indicator_material,
-            R.drawable.abc_textfield_search_material,
-            R.drawable.abc_spinner_mtrl_am_alpha,
-            R.drawable.abc_spinner_textfield_background_material,
-            R.drawable.abc_ratingbar_full_material,
-            R.drawable.abc_switch_track_mtrl_alpha,
-            R.drawable.abc_switch_thumb_material,
-            R.drawable.abc_btn_default_mtrl_shape,
-            R.drawable.abc_btn_borderless_material
+            R.drawable.abc_textfield_search_material
     };
 
     /**
@@ -156,7 +166,16 @@ public final class AppCompatDrawableManager {
     };
 
     private WeakHashMap<Context, SparseArray<ColorStateList>> mTintLists;
-    private ArrayList<InflateDelegate> mDelegates;
+    private ArrayMap<String, InflateDelegate> mDelegates;
+    private SparseArray<String> mKnownDrawableIdTags;
+
+    private final Object mDrawableCacheLock = new Object();
+    private final WeakHashMap<Context, LongSparseArray<WeakReference<Drawable.ConstantState>>>
+            mDrawableCaches = new WeakHashMap<>(0);
+
+    private TypedValue mTypedValue;
+
+    private boolean mHasCheckedVectorDrawableSetup;
 
     public Drawable getDrawable(@NonNull Context context, @DrawableRes int resId) {
         return getDrawable(context, resId, false);
@@ -164,63 +183,247 @@ public final class AppCompatDrawableManager {
 
     public Drawable getDrawable(@NonNull Context context, @DrawableRes int resId,
             boolean failIfNotKnown) {
-        // Let the InflateDelegates have a go first
-        if (mDelegates != null) {
-            for (int i = 0, count = mDelegates.size(); i < count; i++) {
-                final InflateDelegate delegate = mDelegates.get(i);
-                final Drawable result = delegate.onInflateDrawable(context, resId);
-                if (result != null) {
-                    return result;
-                }
-            }
+        checkVectorDrawableSetup(context);
+
+        Drawable drawable = loadDrawableFromDelegates(context, resId);
+        if (drawable == null) {
+            drawable = createDrawableIfNeeded(context, resId);
+        }
+        if (drawable == null) {
+            drawable = ContextCompat.getDrawable(context, resId);
         }
 
-        // The delegates failed so we'll carry on
-        Drawable drawable = ContextCompat.getDrawable(context, resId);
-
         if (drawable != null) {
-            if (Build.VERSION.SDK_INT >= 8) {
-                // Mutate can cause NPEs on 2.1
+            // Tint it if needed
+            drawable = tintDrawable(context, resId, failIfNotKnown, drawable);
+        }
+        if (drawable != null) {
+            // See if we need to 'fix' the drawable
+            DrawableUtils.fixDrawable(drawable);
+        }
+        return drawable;
+    }
+
+    private static long createCacheKey(TypedValue tv) {
+        return (((long) tv.assetCookie) << 32) | tv.data;
+    }
+
+    private Drawable createDrawableIfNeeded(@NonNull Context context,
+            @DrawableRes final int resId) {
+        if (mTypedValue == null) {
+            mTypedValue = new TypedValue();
+        }
+        final TypedValue tv = mTypedValue;
+        context.getResources().getValue(resId, tv, true);
+        final long key = createCacheKey(tv);
+
+        Drawable dr = getCachedDrawable(context, key);
+        if (dr != null) {
+            // If we got a cached drawable, return it
+            return dr;
+        }
+
+        // Else we need to try and create one...
+        if (resId == R.drawable.abc_cab_background_top_material) {
+            dr = new LayerDrawable(new Drawable[]{
+                    getDrawable(context, R.drawable.abc_cab_background_internal_bg),
+                    getDrawable(context, R.drawable.abc_cab_background_top_mtrl_alpha)
+            });
+        }
+
+        if (dr != null) {
+            dr.setChangingConfigurations(tv.changingConfigurations);
+            // If we reached here then we created a new drawable, add it to the cache
+            addDrawableToCache(context, key, dr);
+        }
+
+        return dr;
+    }
+
+    private Drawable tintDrawable(@NonNull Context context, @DrawableRes int resId,
+            boolean failIfNotKnown, @NonNull Drawable drawable) {
+        final ColorStateList tintList = getTintList(context, resId);
+        if (tintList != null) {
+            // First mutate the Drawable, then wrap it and set the tint list
+            if (DrawableUtils.canSafelyMutateDrawable(drawable)) {
                 drawable = drawable.mutate();
             }
+            drawable = DrawableCompat.wrap(drawable);
+            DrawableCompat.setTintList(drawable, tintList);
 
-            final ColorStateList tintList = getTintList(context, resId);
-            if (tintList != null) {
-                // First wrap the Drawable and set the tint list
-                drawable = DrawableCompat.wrap(drawable);
-                DrawableCompat.setTintList(drawable, tintList);
-
-                // If there is a blending mode specified for the drawable, use it
-                final PorterDuff.Mode tintMode = getTintMode(resId);
-                if (tintMode != null) {
-                    DrawableCompat.setTintMode(drawable, tintMode);
-                }
-            } else if (resId == R.drawable.abc_cab_background_top_material) {
-                return new LayerDrawable(new Drawable[]{
-                        getDrawable(context, R.drawable.abc_cab_background_internal_bg),
-                        getDrawable(context, R.drawable.abc_cab_background_top_mtrl_alpha)
-                });
-            } else if (resId == R.drawable.abc_seekbar_track_material) {
-                LayerDrawable ld = (LayerDrawable) drawable;
-                setPorterDuffColorFilter(ld.findDrawableByLayerId(android.R.id.background),
-                        getThemeAttrColor(context, R.attr.colorControlNormal), DEFAULT_MODE);
-                setPorterDuffColorFilter(ld.findDrawableByLayerId(android.R.id.secondaryProgress),
-                        getThemeAttrColor(context, R.attr.colorControlNormal), DEFAULT_MODE);
-                setPorterDuffColorFilter(ld.findDrawableByLayerId(android.R.id.progress),
-                        getThemeAttrColor(context, R.attr.colorControlActivated), DEFAULT_MODE);
-            } else {
-                final boolean tinted = tintDrawableUsingColorFilter(context, resId, drawable);
-                if (!tinted && failIfNotKnown) {
-                    // If we didn't tint using a ColorFilter, and we're set to fail if we don't
-                    // know the id, return null
-                    drawable = null;
-                }
+            // If there is a blending mode specified for the drawable, use it
+            final PorterDuff.Mode tintMode = getTintMode(resId);
+            if (tintMode != null) {
+                DrawableCompat.setTintMode(drawable, tintMode);
+            }
+        } else if (resId == R.drawable.abc_seekbar_track_material) {
+            LayerDrawable ld = (LayerDrawable) drawable;
+            setPorterDuffColorFilter(ld.findDrawableByLayerId(android.R.id.background),
+                    getThemeAttrColor(context, R.attr.colorControlNormal), DEFAULT_MODE);
+            setPorterDuffColorFilter(ld.findDrawableByLayerId(android.R.id.secondaryProgress),
+                    getThemeAttrColor(context, R.attr.colorControlNormal), DEFAULT_MODE);
+            setPorterDuffColorFilter(ld.findDrawableByLayerId(android.R.id.progress),
+                    getThemeAttrColor(context, R.attr.colorControlActivated), DEFAULT_MODE);
+        } else if (resId == R.drawable.abc_ratingbar_material
+                || resId == R.drawable.abc_ratingbar_indicator_material
+                || resId == R.drawable.abc_ratingbar_small_material) {
+            LayerDrawable ld = (LayerDrawable) drawable;
+            setPorterDuffColorFilter(ld.findDrawableByLayerId(android.R.id.background),
+                    getDisabledThemeAttrColor(context, R.attr.colorControlNormal),
+                    DEFAULT_MODE);
+            setPorterDuffColorFilter(ld.findDrawableByLayerId(android.R.id.secondaryProgress),
+                    getThemeAttrColor(context, R.attr.colorControlActivated), DEFAULT_MODE);
+            setPorterDuffColorFilter(ld.findDrawableByLayerId(android.R.id.progress),
+                    getThemeAttrColor(context, R.attr.colorControlActivated), DEFAULT_MODE);
+        } else {
+            final boolean tinted = tintDrawableUsingColorFilter(context, resId, drawable);
+            if (!tinted && failIfNotKnown) {
+                // If we didn't tint using a ColorFilter, and we're set to fail if we don't
+                // know the id, return null
+                drawable = null;
             }
         }
         return drawable;
     }
 
-    public final boolean tintDrawableUsingColorFilter(@NonNull Context context,
+    private Drawable loadDrawableFromDelegates(@NonNull Context context, @DrawableRes int resId) {
+        if (mDelegates != null && !mDelegates.isEmpty()) {
+            if (mKnownDrawableIdTags != null) {
+                final String cachedTagName = mKnownDrawableIdTags.get(resId);
+                if (SKIP_DRAWABLE_TAG.equals(cachedTagName)
+                        || (cachedTagName != null && mDelegates.get(cachedTagName) == null)) {
+                    // If we don't have a delegate for the drawable tag, or we've been set to
+                    // skip it, fail fast and return null
+                    if (DEBUG) {
+                        Log.d(TAG, "[loadDrawableFromDelegates] Skipping drawable: "
+                                + context.getResources().getResourceName(resId));
+                    }
+                    return null;
+                }
+            } else {
+                // Create an id cache as we'll need one later
+                mKnownDrawableIdTags = new SparseArray<>();
+            }
+
+            if (mTypedValue == null) {
+                mTypedValue = new TypedValue();
+            }
+            final TypedValue tv = mTypedValue;
+            final Resources res = context.getResources();
+            res.getValue(resId, tv, true);
+
+            final long key = createCacheKey(tv);
+
+            Drawable dr = getCachedDrawable(context, key);
+            if (dr != null) {
+                if (DEBUG) {
+                    Log.i(TAG, "[loadDrawableFromDelegates] Returning cached drawable: " +
+                            context.getResources().getResourceName(resId));
+                }
+                // We have a cached drawable, return it!
+                return dr;
+            }
+
+            if (tv.string != null && tv.string.toString().endsWith(".xml")) {
+                // If the resource is an XML file, let's try and parse it
+                try {
+                    final XmlPullParser parser = res.getXml(resId);
+                    final AttributeSet attrs = Xml.asAttributeSet(parser);
+                    int type;
+                    while ((type = parser.next()) != XmlPullParser.START_TAG &&
+                            type != XmlPullParser.END_DOCUMENT) {
+                        // Empty loop
+                    }
+                    if (type != XmlPullParser.START_TAG) {
+                        throw new XmlPullParserException("No start tag found");
+                    }
+
+                    final String tagName = parser.getName();
+                    // Add the tag name to the cache
+                    mKnownDrawableIdTags.append(resId, tagName);
+
+                    // Now try and find a delegate for the tag name and inflate if found
+                    final InflateDelegate delegate = mDelegates.get(tagName);
+                    if (delegate != null) {
+                        dr = delegate.createFromXmlInner(context, parser, attrs,
+                                context.getTheme());
+                    }
+                    if (dr != null) {
+                        // Add it to the drawable cache
+                        dr.setChangingConfigurations(tv.changingConfigurations);
+                        if (addDrawableToCache(context, key, dr) && DEBUG) {
+                            Log.i(TAG, "[loadDrawableFromDelegates] Saved drawable to cache: " +
+                                    context.getResources().getResourceName(resId));
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Exception while inflating drawable", e);
+                }
+            }
+            if (dr == null) {
+                // If we reach here then the delegate inflation of the resource failed. Mark it as
+                // bad so we skip the id next time
+                mKnownDrawableIdTags.append(resId, SKIP_DRAWABLE_TAG);
+            }
+            return dr;
+        }
+
+        return null;
+    }
+
+    private Drawable getCachedDrawable(@NonNull final Context context, final long key) {
+        synchronized (mDrawableCacheLock) {
+            final LongSparseArray<WeakReference<ConstantState>> cache
+                    = mDrawableCaches.get(context);
+            if (cache == null) {
+                return null;
+            }
+
+            final WeakReference<ConstantState> wr = cache.get(key);
+            if (wr != null) {
+                // We have the key, and the secret
+                ConstantState entry = wr.get();
+                if (entry != null) {
+                    return entry.newDrawable(context.getResources());
+                } else {
+                    // Our entry has been purged
+                    cache.delete(key);
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean addDrawableToCache(@NonNull final Context context, final long key,
+            @NonNull final Drawable drawable) {
+        final ConstantState cs = drawable.getConstantState();
+        if (cs != null) {
+            synchronized (mDrawableCacheLock) {
+                LongSparseArray<WeakReference<ConstantState>> cache = mDrawableCaches.get(context);
+                if (cache == null) {
+                    cache = new LongSparseArray<>();
+                    mDrawableCaches.put(context, cache);
+                }
+                cache.put(key, new WeakReference<ConstantState>(cs));
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public final Drawable onDrawableLoadedFromResources(@NonNull Context context,
+            @NonNull VectorEnabledTintResources resources, @DrawableRes final int resId) {
+        Drawable drawable = loadDrawableFromDelegates(context, resId);
+        if (drawable == null) {
+            drawable = resources.superGetDrawable(resId);
+        }
+        if (drawable != null) {
+            return tintDrawable(context, resId, false, drawable);
+        }
+        return null;
+    }
+
+    static boolean tintDrawableUsingColorFilter(@NonNull Context context,
             @DrawableRes final int resId, @NonNull Drawable drawable) {
         PorterDuff.Mode tintMode = DEFAULT_MODE;
         boolean colorAttrSet = false;
@@ -241,9 +444,16 @@ public final class AppCompatDrawableManager {
             colorAttr = android.R.attr.colorForeground;
             colorAttrSet = true;
             alpha = Math.round(0.16f * 255);
+        } else if (resId == R.drawable.abc_dialog_material_background) {
+            colorAttr = android.R.attr.colorBackground;
+            colorAttrSet = true;
         }
 
         if (colorAttrSet) {
+            if (DrawableUtils.canSafelyMutateDrawable(drawable)) {
+                drawable = drawable.mutate();
+            }
+
             final int color = getThemeAttrColor(context, colorAttr);
             drawable.setColorFilter(getPorterDuffColorFilter(color, tintMode));
 
@@ -252,7 +462,8 @@ public final class AppCompatDrawableManager {
             }
 
             if (DEBUG) {
-                Log.d(TAG, "Tinted Drawable: " + context.getResources().getResourceName(resId) +
+                Log.d(TAG, "[tintDrawableUsingColorFilter] Tinted "
+                        + context.getResources().getResourceName(resId) +
                         " with color: #" + Integer.toHexString(color));
             }
             return true;
@@ -260,18 +471,16 @@ public final class AppCompatDrawableManager {
         return false;
     }
 
-    public void addDelegate(@NonNull InflateDelegate delegate) {
+    private void addDelegate(@NonNull String tagName, @NonNull InflateDelegate delegate) {
         if (mDelegates == null) {
-            mDelegates = new ArrayList<>();
+            mDelegates = new ArrayMap<>();
         }
-        if (!mDelegates.contains(delegate)) {
-            mDelegates.add(delegate);
-        }
+        mDelegates.put(tagName, delegate);
     }
 
-    public void removeDelegate(@NonNull InflateDelegate delegate) {
-        if (mDelegates != null) {
-            mDelegates.remove(delegate);
+    private void removeDelegate(@NonNull String tagName, @NonNull InflateDelegate delegate) {
+        if (mDelegates != null && mDelegates.get(tagName) == delegate) {
+            mDelegates.remove(tagName);
         }
     }
 
@@ -301,27 +510,28 @@ public final class AppCompatDrawableManager {
         if (tint == null) {
             // ...if the cache did not contain a color state list, try and create one
             if (resId == R.drawable.abc_edit_text_material) {
-                tint = createEditTextColorStateList(context);
+                tint = getColorStateList(context, R.color.abc_tint_edittext);
             } else if (resId == R.drawable.abc_switch_track_mtrl_alpha) {
-                tint = createSwitchTrackColorStateList(context);
+                tint = getColorStateList(context, R.color.abc_tint_switch_track);
             } else if (resId == R.drawable.abc_switch_thumb_material) {
-                tint = createSwitchThumbColorStateList(context);
-            } else if (resId == R.drawable.abc_btn_default_mtrl_shape
-                    || resId == R.drawable.abc_btn_borderless_material) {
+                tint = getColorStateList(context, R.color.abc_tint_switch_thumb);
+            } else if (resId == R.drawable.abc_btn_default_mtrl_shape) {
                 tint = createDefaultButtonColorStateList(context);
+            } else if (resId == R.drawable.abc_btn_borderless_material) {
+                tint = createBorderlessButtonColorStateList(context);
             } else if (resId == R.drawable.abc_btn_colored_material) {
                 tint = createColoredButtonColorStateList(context);
             } else if (resId == R.drawable.abc_spinner_mtrl_am_alpha
                     || resId == R.drawable.abc_spinner_textfield_background_material) {
-                tint = createSpinnerColorStateList(context);
+                tint = getColorStateList(context, R.color.abc_tint_spinner);
             } else if (arrayContains(TINT_COLOR_CONTROL_NORMAL, resId)) {
                 tint = getThemeAttrColorStateList(context, R.attr.colorControlNormal);
             } else if (arrayContains(TINT_COLOR_CONTROL_STATE_LIST, resId)) {
-                tint = createDefaultColorStateList(context);
+                tint = getColorStateList(context, R.color.abc_tint_default);
             } else if (arrayContains(TINT_CHECKABLE_BUTTON_LIST, resId)) {
-                tint = createCheckableButtonColorStateList(context);
+                tint = getColorStateList(context, R.color.abc_tint_btn_checkable);
             } else if (resId == R.drawable.abc_seekbar_thumb_material) {
-                tint = createSeekbarThumbColorStateList(context);
+                tint = getColorStateList(context, R.color.abc_tint_seek_thumb);
             }
 
             if (tint != null) {
@@ -352,178 +562,24 @@ public final class AppCompatDrawableManager {
         themeTints.append(resId, tintList);
     }
 
-    private ColorStateList createDefaultColorStateList(Context context) {
-        /**
-         * Generate the default color state list which uses the colorControl attributes.
-         * Order is important here. The default enabled state needs to go at the bottom.
-         */
-
-        final int colorControlNormal = getThemeAttrColor(context, R.attr.colorControlNormal);
-        final int colorControlActivated = getThemeAttrColor(context, R.attr.colorControlActivated);
-
-        final int[][] states = new int[7][];
-        final int[] colors = new int[7];
-        int i = 0;
-
-        // Disabled state
-        states[i] = ThemeUtils.DISABLED_STATE_SET;
-        colors[i] = getDisabledThemeAttrColor(context, R.attr.colorControlNormal);
-        i++;
-
-        states[i] = ThemeUtils.FOCUSED_STATE_SET;
-        colors[i] = colorControlActivated;
-        i++;
-
-        states[i] = ThemeUtils.ACTIVATED_STATE_SET;
-        colors[i] = colorControlActivated;
-        i++;
-
-        states[i] = ThemeUtils.PRESSED_STATE_SET;
-        colors[i] = colorControlActivated;
-        i++;
-
-        states[i] = ThemeUtils.CHECKED_STATE_SET;
-        colors[i] = colorControlActivated;
-        i++;
-
-        states[i] = ThemeUtils.SELECTED_STATE_SET;
-        colors[i] = colorControlActivated;
-        i++;
-
-        // Default enabled state
-        states[i] = ThemeUtils.EMPTY_STATE_SET;
-        colors[i] = colorControlNormal;
-        i++;
-
-        return new ColorStateList(states, colors);
-    }
-
-    private ColorStateList createCheckableButtonColorStateList(Context context) {
-        final int[][] states = new int[3][];
-        final int[] colors = new int[3];
-        int i = 0;
-
-        // Disabled state
-        states[i] = ThemeUtils.DISABLED_STATE_SET;
-        colors[i] = getDisabledThemeAttrColor(context, R.attr.colorControlNormal);
-        i++;
-
-        states[i] = ThemeUtils.CHECKED_STATE_SET;
-        colors[i] = getThemeAttrColor(context, R.attr.colorControlActivated);
-        i++;
-
-        // Default enabled state
-        states[i] = ThemeUtils.EMPTY_STATE_SET;
-        colors[i] = getThemeAttrColor(context, R.attr.colorControlNormal);
-        i++;
-
-        return new ColorStateList(states, colors);
-    }
-
-    private ColorStateList createSwitchTrackColorStateList(Context context) {
-        final int[][] states = new int[3][];
-        final int[] colors = new int[3];
-        int i = 0;
-
-        // Disabled state
-        states[i] = ThemeUtils.DISABLED_STATE_SET;
-        colors[i] = getThemeAttrColor(context, android.R.attr.colorForeground, 0.1f);
-        i++;
-
-        states[i] = ThemeUtils.CHECKED_STATE_SET;
-        colors[i] = getThemeAttrColor(context, R.attr.colorControlActivated, 0.3f);
-        i++;
-
-        // Default enabled state
-        states[i] = ThemeUtils.EMPTY_STATE_SET;
-        colors[i] = getThemeAttrColor(context, android.R.attr.colorForeground, 0.3f);
-        i++;
-
-        return new ColorStateList(states, colors);
-    }
-
-    private ColorStateList createSwitchThumbColorStateList(Context context) {
-        final int[][] states = new int[3][];
-        final int[] colors = new int[3];
-        int i = 0;
-
-        final ColorStateList thumbColor = getThemeAttrColorStateList(context,
-                R.attr.colorSwitchThumbNormal);
-
-        if (thumbColor != null && thumbColor.isStateful()) {
-            // If colorSwitchThumbNormal is a valid ColorStateList, extract the default and
-            // disabled colors from it
-
-            // Disabled state
-            states[i] = ThemeUtils.DISABLED_STATE_SET;
-            colors[i] = thumbColor.getColorForState(states[i], 0);
-            i++;
-
-            states[i] = ThemeUtils.CHECKED_STATE_SET;
-            colors[i] = getThemeAttrColor(context, R.attr.colorControlActivated);
-            i++;
-
-            // Default enabled state
-            states[i] = ThemeUtils.EMPTY_STATE_SET;
-            colors[i] = thumbColor.getDefaultColor();
-            i++;
-        } else {
-            // Else we'll use an approximation using the default disabled alpha
-
-            // Disabled state
-            states[i] = ThemeUtils.DISABLED_STATE_SET;
-            colors[i] = getDisabledThemeAttrColor(context, R.attr.colorSwitchThumbNormal);
-            i++;
-
-            states[i] = ThemeUtils.CHECKED_STATE_SET;
-            colors[i] = getThemeAttrColor(context, R.attr.colorControlActivated);
-            i++;
-
-            // Default enabled state
-            states[i] = ThemeUtils.EMPTY_STATE_SET;
-            colors[i] = getThemeAttrColor(context, R.attr.colorSwitchThumbNormal);
-            i++;
-        }
-
-        return new ColorStateList(states, colors);
-    }
-
-    private ColorStateList createEditTextColorStateList(Context context) {
-        final int[][] states = new int[3][];
-        final int[] colors = new int[3];
-        int i = 0;
-
-        // Disabled state
-        states[i] = ThemeUtils.DISABLED_STATE_SET;
-        colors[i] = getDisabledThemeAttrColor(context, R.attr.colorControlNormal);
-        i++;
-
-        states[i] = ThemeUtils.NOT_PRESSED_OR_FOCUSED_STATE_SET;
-        colors[i] = getThemeAttrColor(context, R.attr.colorControlNormal);
-        i++;
-
-        // Default enabled state
-        states[i] = ThemeUtils.EMPTY_STATE_SET;
-        colors[i] = getThemeAttrColor(context, R.attr.colorControlActivated);
-        i++;
-
-        return new ColorStateList(states, colors);
-    }
-
     private ColorStateList createDefaultButtonColorStateList(Context context) {
-        return createButtonColorStateList(context, R.attr.colorButtonNormal);
+        return createButtonColorStateList(context,
+                getThemeAttrColor(context, R.attr.colorButtonNormal));
+    }
+
+    private ColorStateList createBorderlessButtonColorStateList(Context context) {
+        return createButtonColorStateList(context, Color.TRANSPARENT);
     }
 
     private ColorStateList createColoredButtonColorStateList(Context context) {
-        return createButtonColorStateList(context, R.attr.colorAccent);
+        return createButtonColorStateList(context, getThemeAttrColor(context, R.attr.colorAccent));
     }
 
-    private ColorStateList createButtonColorStateList(Context context, int baseColorAttr) {
+    private ColorStateList createButtonColorStateList(Context context, @ColorInt int baseColor) {
         final int[][] states = new int[4][];
         final int[] colors = new int[4];
         int i = 0;
 
-        final int baseColor = getThemeAttrColor(context, baseColorAttr);
         final int colorControlHighlight = getThemeAttrColor(context, R.attr.colorControlHighlight);
 
         // Disabled state
@@ -542,44 +598,6 @@ public final class AppCompatDrawableManager {
         // Default enabled state
         states[i] = ThemeUtils.EMPTY_STATE_SET;
         colors[i] = baseColor;
-        i++;
-
-        return new ColorStateList(states, colors);
-    }
-
-    private ColorStateList createSpinnerColorStateList(Context context) {
-        final int[][] states = new int[3][];
-        final int[] colors = new int[3];
-        int i = 0;
-
-        // Disabled state
-        states[i] = ThemeUtils.DISABLED_STATE_SET;
-        colors[i] = getDisabledThemeAttrColor(context, R.attr.colorControlNormal);
-        i++;
-
-        states[i] = ThemeUtils.NOT_PRESSED_OR_FOCUSED_STATE_SET;
-        colors[i] = getThemeAttrColor(context, R.attr.colorControlNormal);
-        i++;
-
-        states[i] = ThemeUtils.EMPTY_STATE_SET;
-        colors[i] = getThemeAttrColor(context, R.attr.colorControlActivated);
-        i++;
-
-        return new ColorStateList(states, colors);
-    }
-
-    private ColorStateList createSeekbarThumbColorStateList(Context context) {
-        final int[][] states = new int[2][];
-        final int[] colors = new int[2];
-        int i = 0;
-
-        // Disabled state
-        states[i] = ThemeUtils.DISABLED_STATE_SET;
-        colors[i] = getDisabledThemeAttrColor(context, R.attr.colorControlActivated);
-        i++;
-
-        states[i] = ThemeUtils.EMPTY_STATE_SET;
-        colors[i] = getThemeAttrColor(context, R.attr.colorControlActivated);
         i++;
 
         return new ColorStateList(states, colors);
@@ -608,7 +626,8 @@ public final class AppCompatDrawableManager {
     }
 
     public static void tintDrawable(Drawable drawable, TintInfo tint, int[] state) {
-        if (shouldMutateBackground(drawable) && drawable.mutate() != drawable) {
+        if (DrawableUtils.canSafelyMutateDrawable(drawable)
+                && drawable.mutate() != drawable) {
             Log.d(TAG, "Mutated drawable is not the same instance as the input.");
             return;
         }
@@ -627,30 +646,6 @@ public final class AppCompatDrawableManager {
             // so we force it ourselves
             drawable.invalidateSelf();
         }
-    }
-
-    private static boolean shouldMutateBackground(Drawable drawable) {
-        if (drawable instanceof LayerDrawable) {
-            return Build.VERSION.SDK_INT >= 16;
-        } else if (drawable instanceof InsetDrawable) {
-            return Build.VERSION.SDK_INT >= 14;
-        } else if (drawable instanceof StateListDrawable) {
-            // StateListDrawable has a bug in mutate() on API 7
-            return Build.VERSION.SDK_INT >= 8;
-        } else if (drawable instanceof DrawableContainer) {
-            // If we have a DrawableContainer, let's traverse it's child array
-            final Drawable.ConstantState state = drawable.getConstantState();
-            if (state instanceof DrawableContainer.DrawableContainerState) {
-                final DrawableContainer.DrawableContainerState containerState =
-                        (DrawableContainer.DrawableContainerState) state;
-                for (Drawable child : containerState.getChildren()) {
-                    if (!shouldMutateBackground(child)) {
-                        return false;
-                    }
-                }
-            }
-        }
-        return true;
     }
 
     private static PorterDuffColorFilter createTintFilter(ColorStateList tint,
@@ -676,6 +671,59 @@ public final class AppCompatDrawableManager {
     }
 
     private static void setPorterDuffColorFilter(Drawable d, int color, PorterDuff.Mode mode) {
+        if (DrawableUtils.canSafelyMutateDrawable(d)) {
+            d = d.mutate();
+        }
         d.setColorFilter(getPorterDuffColorFilter(color, mode == null ? DEFAULT_MODE : mode));
+    }
+
+    private void checkVectorDrawableSetup(@NonNull Context context) {
+        if (mHasCheckedVectorDrawableSetup) {
+            // We've already checked so return now...
+            return;
+        }
+        // Here we will check that a known Vector drawable resource inside AppCompat can be
+        // correctly decoded. We use one that will almost definitely be used in the future to
+        // negate any wasted work
+        mHasCheckedVectorDrawableSetup = true;
+        final Drawable d = getDrawable(context, R.drawable.abc_ic_ab_back_material);
+        if (d == null || !isVectorDrawable(d)) {
+            mHasCheckedVectorDrawableSetup = false;
+            throw new IllegalStateException("This app has been built with an incorrect "
+                    + "configuration. Please configure your build for VectorDrawableCompat.");
+        }
+    }
+
+    private static boolean isVectorDrawable(@NonNull Drawable d) {
+        return d instanceof VectorDrawableCompat
+                || PLATFORM_VD_CLAZZ.equals(d.getClass().getName());
+    }
+
+    private static class VdcInflateDelegate implements InflateDelegate {
+        @Override
+        public Drawable createFromXmlInner(@NonNull Context context, @NonNull XmlPullParser parser,
+                @NonNull AttributeSet attrs, @Nullable Resources.Theme theme) {
+            try {
+                return VectorDrawableCompat
+                        .createFromXmlInner(context.getResources(), parser, attrs, theme);
+            } catch (Exception e) {
+                Log.e("VdcInflateDelegate", "Exception while inflating <vector>", e);
+                return null;
+            }
+        }
+    }
+
+    private static class AvdcInflateDelegate implements InflateDelegate {
+        @Override
+        public Drawable createFromXmlInner(@NonNull Context context, @NonNull XmlPullParser parser,
+                @NonNull AttributeSet attrs, @Nullable Resources.Theme theme) {
+            try {
+                return AnimatedVectorDrawableCompat
+                        .createFromXmlInner(context, context.getResources(), parser, attrs, theme);
+            } catch (Exception e) {
+                Log.e("AvdcInflateDelegate", "Exception while inflating <animated-vector>", e);
+                return null;
+            }
+        }
     }
 }

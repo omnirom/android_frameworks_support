@@ -773,11 +773,13 @@ public final class Palette {
                 if (bitmap != mBitmap && region != null) {
                     // If we have a scaled bitmap and a selected region, we need to scale down the
                     // region to match the new scale
-                    final float scale = bitmap.getWidth() / (float) mBitmap.getWidth();
+                    final double scale = bitmap.getWidth() / (double) mBitmap.getWidth();
                     region.left = (int) Math.floor(region.left * scale);
                     region.top = (int) Math.floor(region.top * scale);
-                    region.right = (int) Math.ceil(region.right * scale);
-                    region.bottom = (int) Math.ceil(region.bottom * scale);
+                    region.right = Math.min((int) Math.ceil(region.right * scale),
+                            bitmap.getWidth());
+                    region.bottom = Math.min((int) Math.ceil(region.bottom * scale),
+                            bitmap.getHeight());
                 }
 
                 // Now generate a quantizer from the Bitmap
@@ -848,21 +850,18 @@ public final class Palette {
             final int bitmapWidth = bitmap.getWidth();
             final int bitmapHeight = bitmap.getHeight();
             final int[] pixels = new int[bitmapWidth * bitmapHeight];
+            bitmap.getPixels(pixels, 0, bitmapWidth, 0, 0, bitmapWidth, bitmapHeight);
 
             if (mRegion == null) {
                 // If we don't have a region, return all of the pixels
-                bitmap.getPixels(pixels, 0, bitmapWidth, 0, 0, bitmapWidth, bitmapHeight);
                 return pixels;
             } else {
                 // If we do have a region, lets create a subset array containing only the region's
                 // pixels
                 final int regionWidth = mRegion.width();
                 final int regionHeight = mRegion.height();
-                // First read the pixels within the region
-                bitmap.getPixels(pixels, 0, bitmapWidth, mRegion.left, mRegion.top,
-                        regionWidth, regionHeight);
-                // pixels now contains all of the pixels, but not packed together. We need to
-                // iterate through each row and copy them into a new smaller array
+                // pixels contains all of the pixels, so we need to iterate through each row and
+                // copy the regions pixels into a new smaller array
                 final int[] subsetPixels = new int[regionWidth * regionHeight];
                 for (int row = 0; row < regionHeight; row++) {
                     System.arraycopy(pixels, ((row + mRegion.top) * bitmapWidth) + mRegion.left,

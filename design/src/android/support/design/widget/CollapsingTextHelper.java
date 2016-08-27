@@ -105,8 +105,7 @@ final class CollapsingTextHelper {
     public CollapsingTextHelper(View view) {
         mView = view;
 
-        mTextPaint = new TextPaint();
-        mTextPaint.setAntiAlias(true);
+        mTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
 
         mCollapsedBounds = new Rect();
         mExpandedBounds = new Rect();
@@ -195,19 +194,26 @@ final class CollapsingTextHelper {
     }
 
     void setCollapsedTextAppearance(int resId) {
-        TypedArray a = mView.getContext().obtainStyledAttributes(resId, R.styleable.TextAppearance);
-        if (a.hasValue(R.styleable.TextAppearance_android_textColor)) {
+        TypedArray a = mView.getContext().obtainStyledAttributes(resId,
+                android.support.v7.appcompat.R.styleable.TextAppearance);
+        if (a.hasValue(android.support.v7.appcompat.R.styleable.TextAppearance_android_textColor)) {
             mCollapsedTextColor = a.getColor(
-                    R.styleable.TextAppearance_android_textColor, mCollapsedTextColor);
+                    android.support.v7.appcompat.R.styleable.TextAppearance_android_textColor,
+                    mCollapsedTextColor);
         }
-        if (a.hasValue(R.styleable.TextAppearance_android_textSize)) {
+        if (a.hasValue(android.support.v7.appcompat.R.styleable.TextAppearance_android_textSize)) {
             mCollapsedTextSize = a.getDimensionPixelSize(
-                    R.styleable.TextAppearance_android_textSize, (int) mCollapsedTextSize);
+                    android.support.v7.appcompat.R.styleable.TextAppearance_android_textSize,
+                    (int) mCollapsedTextSize);
         }
-        mCollapsedShadowColor = a.getInt(R.styleable.TextAppearance_android_shadowColor, 0);
-        mCollapsedShadowDx = a.getFloat(R.styleable.TextAppearance_android_shadowDx, 0);
-        mCollapsedShadowDy = a.getFloat(R.styleable.TextAppearance_android_shadowDy, 0);
-        mCollapsedShadowRadius = a.getFloat(R.styleable.TextAppearance_android_shadowRadius, 0);
+        mCollapsedShadowColor = a.getInt(
+                android.support.v7.appcompat.R.styleable.TextAppearance_android_shadowColor, 0);
+        mCollapsedShadowDx = a.getFloat(
+                android.support.v7.appcompat.R.styleable.TextAppearance_android_shadowDx, 0);
+        mCollapsedShadowDy = a.getFloat(
+                android.support.v7.appcompat.R.styleable.TextAppearance_android_shadowDy, 0);
+        mCollapsedShadowRadius = a.getFloat(
+                android.support.v7.appcompat.R.styleable.TextAppearance_android_shadowRadius, 0);
         a.recycle();
 
         if (Build.VERSION.SDK_INT >= 16) {
@@ -218,19 +224,26 @@ final class CollapsingTextHelper {
     }
 
     void setExpandedTextAppearance(int resId) {
-        TypedArray a = mView.getContext().obtainStyledAttributes(resId, R.styleable.TextAppearance);
-        if (a.hasValue(R.styleable.TextAppearance_android_textColor)) {
+        TypedArray a = mView.getContext().obtainStyledAttributes(resId,
+                android.support.v7.appcompat.R.styleable.TextAppearance);
+        if (a.hasValue(android.support.v7.appcompat.R.styleable.TextAppearance_android_textColor)) {
             mExpandedTextColor = a.getColor(
-                    R.styleable.TextAppearance_android_textColor, mExpandedTextColor);
+                    android.support.v7.appcompat.R.styleable.TextAppearance_android_textColor,
+                    mExpandedTextColor);
         }
-        if (a.hasValue(R.styleable.TextAppearance_android_textSize)) {
+        if (a.hasValue(android.support.v7.appcompat.R.styleable.TextAppearance_android_textSize)) {
             mExpandedTextSize = a.getDimensionPixelSize(
-                    R.styleable.TextAppearance_android_textSize, (int) mExpandedTextSize);
+                    android.support.v7.appcompat.R.styleable.TextAppearance_android_textSize,
+                    (int) mExpandedTextSize);
         }
-        mExpandedShadowColor = a.getInt(R.styleable.TextAppearance_android_shadowColor, 0);
-        mExpandedShadowDx = a.getFloat(R.styleable.TextAppearance_android_shadowDx, 0);
-        mExpandedShadowDy = a.getFloat(R.styleable.TextAppearance_android_shadowDy, 0);
-        mExpandedShadowRadius = a.getFloat(R.styleable.TextAppearance_android_shadowRadius, 0);
+        mExpandedShadowColor = a.getInt(
+                android.support.v7.appcompat.R.styleable.TextAppearance_android_shadowColor, 0);
+        mExpandedShadowDx = a.getFloat(
+                android.support.v7.appcompat.R.styleable.TextAppearance_android_shadowDx, 0);
+        mExpandedShadowDy = a.getFloat(
+                android.support.v7.appcompat.R.styleable.TextAppearance_android_shadowDy, 0);
+        mExpandedShadowRadius = a.getFloat(
+                android.support.v7.appcompat.R.styleable.TextAppearance_android_shadowRadius, 0);
         a.recycle();
 
         if (Build.VERSION.SDK_INT >= 16) {
@@ -363,7 +376,7 @@ final class CollapsingTextHelper {
                 mCollapsedDrawY = mCollapsedBounds.centerY() + textOffset;
                 break;
         }
-        switch (collapsedAbsGravity & Gravity.HORIZONTAL_GRAVITY_MASK) {
+        switch (collapsedAbsGravity & GravityCompat.RELATIVE_HORIZONTAL_GRAVITY_MASK) {
             case Gravity.CENTER_HORIZONTAL:
                 mCollapsedDrawX = mCollapsedBounds.centerX() - (width / 2);
                 break;
@@ -395,7 +408,7 @@ final class CollapsingTextHelper {
                 mExpandedDrawY = mExpandedBounds.centerY() + textOffset;
                 break;
         }
-        switch (expandedAbsGravity & Gravity.HORIZONTAL_GRAVITY_MASK) {
+        switch (expandedAbsGravity & GravityCompat.RELATIVE_HORIZONTAL_GRAVITY_MASK) {
             case Gravity.CENTER_HORIZONTAL:
                 mExpandedDrawX = mExpandedBounds.centerX() - (width / 2);
                 break;
@@ -436,10 +449,6 @@ final class CollapsingTextHelper {
 
             final float ascent;
             final float descent;
-
-            // Update the TextPaint to the current text size
-            mTextPaint.setTextSize(mCurrentTextSize);
-
             if (drawTexture) {
                 ascent = mTextureAscent * mScale;
                 descent = mTextureDescent * mScale;
@@ -536,6 +545,8 @@ final class CollapsingTextHelper {
         if (mTextToDraw == null || updateDrawText) {
             mTextPaint.setTextSize(mCurrentTextSize);
             mTextPaint.setTypeface(mCurrentTypeface);
+            // Use linear text scaling if we're scaling the canvas
+            mTextPaint.setLinearText(mScale != 1f);
 
             // If we don't currently have text to draw, or the text size has changed, ellipsize...
             final CharSequence title = TextUtils.ellipsize(mText, mTextPaint,

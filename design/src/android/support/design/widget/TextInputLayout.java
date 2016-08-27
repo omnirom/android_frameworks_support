@@ -20,16 +20,24 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.DrawableContainer;
+import android.graphics.drawable.InsetDrawable;
+import android.os.Build;
+import android.os.Parcel;
+import android.os.Parcelable;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.annotation.StyleRes;
 import android.support.design.R;
+import android.support.v4.content.ContextCompat;
+import android.support.v4.graphics.drawable.DrawableWrapper;
+import android.support.v4.os.ParcelableCompat;
+import android.support.v4.os.ParcelableCompatCreatorCallbacks;
+import android.support.v4.view.AbsSavedState;
 import android.support.v4.view.AccessibilityDelegateCompat;
 import android.support.v4.view.GravityCompat;
 import android.support.v4.view.ViewCompat;
@@ -41,7 +49,7 @@ import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.AttributeSet;
-import android.util.TypedValue;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -55,13 +63,33 @@ import android.widget.TextView;
  * Layout which wraps an {@link android.widget.EditText} (or descendant) to show a floating label
  * when the hint is hidden due to the user inputting text.
  *
- * Also supports showing an error via {@link #setErrorEnabled(boolean)} and
- * {@link #setError(CharSequence)}.
+ * <p>Also supports showing an error via {@link #setErrorEnabled(boolean)} and
+ * {@link #setError(CharSequence)}, and a character counter via
+ * {@link #setCounterEnabled(boolean)}.</p>
+ *
+ * The {@link TextInputEditText} class is provided to be used as a child of this layout. Using
+ * TextInputEditText allows TextInputLayout greater control over the visual aspects of any
+ * text input. An example usage is as so:
+ *
+ * <pre>
+ * &lt;android.support.design.widget.TextInputLayout
+ *         android:layout_width=&quot;match_parent&quot;
+ *         android:layout_height=&quot;wrap_content&quot;&gt;
+ *
+ *     &lt;android.support.design.widget.TextInputEditText
+ *             android:layout_width=&quot;match_parent&quot;
+ *             android:layout_height=&quot;wrap_content&quot;
+ *             android:hint=&quot;@string/form_username&quot;/&gt;
+ *
+ * &lt;/android.support.design.widget.TextInputLayout&gt;
+ * </pre>
  */
 public class TextInputLayout extends LinearLayout {
 
     private static final int ANIMATION_DURATION = 200;
     private static final int INVALID_MAX_LENGTH = -1;
+
+    private static final String LOG_TAG = "TextInputLayout";
 
     private EditText mEditText;
 
@@ -77,6 +105,7 @@ public class TextInputLayout extends LinearLayout {
     private TextView mErrorView;
     private int mErrorTextAppearance;
     private boolean mErrorShown;
+    private CharSequence mError;
 
     private boolean mCounterEnabled;
     private TextView mCounterView;
@@ -196,12 +225,22 @@ public class TextInputLayout extends LinearLayout {
         if (mEditText != null) {
             throw new IllegalArgumentException("We already have an EditText, can only have one");
         }
+
+        if (!(editText instanceof TextInputEditText)) {
+            Log.i(LOG_TAG, "EditText added is not a TextInputEditText. Please switch to using that"
+                    + " class instead.");
+        }
+
         mEditText = editText;
 
         // Use the EditText's typeface, and it's text size for our expanded text
         mCollapsingTextHelper.setTypefaces(mEditText.getTypeface());
         mCollapsingTextHelper.setExpandedTextSize(mEditText.getTextSize());
-        mCollapsingTextHelper.setExpandedTextGravity(mEditText.getGravity());
+
+        final int editTextGravity = mEditText.getGravity();
+        mCollapsingTextHelper.setCollapsedTextGravity(
+                Gravity.TOP | (editTextGravity & GravityCompat.RELATIVE_HORIZONTAL_GRAVITY_MASK));
+        mCollapsingTextHelper.setExpandedTextGravity(editTextGravity);
 
         // Add a TextWatcher so that we know when the text input has changed
         mEditText.addTextChangedListener(new TextWatcher() {
@@ -274,8 +313,6 @@ public class TextInputLayout extends LinearLayout {
 
         if (mCounterOverflowed && mCounterView != null) {
             mCollapsingTextHelper.setCollapsedTextColor(mCounterView.getCurrentTextColor());
-        } else if (isErrorShowing && mErrorView != null) {
-            mCollapsingTextHelper.setCollapsedTextColor(mErrorView.getCurrentTextColor());
         } else if (isFocused && mFocusedTextColor != null) {
             mCollapsingTextHelper.setCollapsedTextColor(mFocusedTextColor.getDefaultColor());
         } else if (mDefaultTextColor != null) {
@@ -455,7 +492,16 @@ public class TextInputLayout extends LinearLayout {
 
             if (enabled) {
                 mErrorView = new TextView(getContext());
-                mErrorView.setTextAppearance(getContext(), mErrorTextAppearance);
+                try {
+                    mErrorView.setTextAppearance(getContext(), mErrorTextAppearance);
+                } catch (Exception e) {
+                    // Probably caused by our theme not extending from Theme.Design*. Instead
+                    // we manually set something appropriate
+                    mErrorView.setTextAppearance(getContext(),
+                            android.support.v7.appcompat.R.style.TextAppearance_AppCompat_Caption);
+                    mErrorView.setTextColor(ContextCompat.getColor(
+                            getContext(), R.color.design_textinput_error_color_light));
+                }
                 mErrorView.setVisibility(INVISIBLE);
                 ViewCompat.setAccessibilityLiveRegion(mErrorView,
                         ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE);
@@ -492,7 +538,9 @@ public class TextInputLayout extends LinearLayout {
      *
      * @see #getError()
      */
-    public void setError(@Nullable CharSequence error) {
+    public void setError(@Nullable final CharSequence error) {
+        mError = error;
+
         if (!mErrorEnabled) {
             if (TextUtils.isEmpty(error)) {
                 // If error isn't enabled, and the error is empty, just return
@@ -502,15 +550,17 @@ public class TextInputLayout extends LinearLayout {
             setErrorEnabled(true);
         }
 
-        if (!TextUtils.isEmpty(error)) {
-            boolean animate;
-            if (TextUtils.equals(error, mErrorView.getText())) {
-                // We've been given the same error message, so only animate if needed
-                animate = !mErrorView.isShown() || ViewCompat.getAlpha(mErrorView) < 1f;
-            } else {
-                animate = true;
-                mErrorView.setText(error);
-            }
+        // Only animate if we've been laid out already and we have a different error
+        final boolean animate = ViewCompat.isLaidOut(this)
+                && !TextUtils.equals(mErrorView.getText(), error);
+        mErrorShown = !TextUtils.isEmpty(error);
+
+        // Cancel any on-going animation
+        ViewCompat.animate(mErrorView).cancel();
+
+        if (mErrorShown) {
+            mErrorView.setText(error);
+            mErrorView.setVisibility(VISIBLE);
 
             if (animate) {
                 if (ViewCompat.getAlpha(mErrorView) == 1f) {
@@ -526,34 +576,34 @@ public class TextInputLayout extends LinearLayout {
                             public void onAnimationStart(View view) {
                                 view.setVisibility(VISIBLE);
                             }
-                        })
-                        .start();
+                        }).start();
+            } else {
+                // Set alpha to 1f, just in case
+                ViewCompat.setAlpha(mErrorView, 1f);
             }
-
-            // Set the EditText's background tint to the error color
-            mErrorShown = true;
-            updateEditTextBackground();
-            updateLabelState(true);
         } else {
             if (mErrorView.getVisibility() == VISIBLE) {
-                ViewCompat.animate(mErrorView)
-                        .alpha(0f)
-                        .setDuration(ANIMATION_DURATION)
-                        .setInterpolator(AnimationUtils.FAST_OUT_LINEAR_IN_INTERPOLATOR)
-                        .setListener(new ViewPropertyAnimatorListenerAdapter() {
-                            @Override
-                            public void onAnimationEnd(View view) {
-                                view.setVisibility(INVISIBLE);
-
-                                updateLabelState(true);
-                            }
-                        }).start();
-
-                // Restore the 'original' tint, using colorControlNormal and colorControlActivated
-                mErrorShown = false;
-                updateEditTextBackground();
+                if (animate) {
+                    ViewCompat.animate(mErrorView)
+                            .alpha(0f)
+                            .setDuration(ANIMATION_DURATION)
+                            .setInterpolator(AnimationUtils.FAST_OUT_LINEAR_IN_INTERPOLATOR)
+                            .setListener(new ViewPropertyAnimatorListenerAdapter() {
+                                @Override
+                                public void onAnimationEnd(View view) {
+                                    mErrorView.setText(error);
+                                    view.setVisibility(INVISIBLE);
+                                }
+                            }).start();
+                } else {
+                    mErrorView.setText(error);
+                    mErrorView.setVisibility(INVISIBLE);
+                }
             }
         }
+
+        updateEditTextBackground();
+        updateLabelState(true);
     }
 
     /**
@@ -566,9 +616,16 @@ public class TextInputLayout extends LinearLayout {
             if (enabled) {
                 mCounterView = new TextView(getContext());
                 mCounterView.setMaxLines(1);
-                mCounterView.setTextAppearance(getContext(), mCounterTextAppearance);
-                ViewCompat.setAccessibilityLiveRegion(mCounterView,
-                        ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE);
+                try {
+                    mCounterView.setTextAppearance(getContext(), mCounterTextAppearance);
+                } catch (Exception e) {
+                    // Probably caused by our theme not extending from Theme.Design*. Instead
+                    // we manually set something appropriate
+                    mCounterView.setTextAppearance(getContext(),
+                            android.support.v7.appcompat.R.style.TextAppearance_AppCompat_Caption);
+                    mCounterView.setTextColor(ContextCompat.getColor(
+                            getContext(), R.color.design_textinput_error_color_light));
+                }
                 addIndicator(mCounterView, -1);
                 if (mEditText == null) {
                     updateCounter(0);
@@ -646,9 +703,13 @@ public class TextInputLayout extends LinearLayout {
     private void updateEditTextBackground() {
         ensureBackgroundDrawableStateWorkaround();
 
-        final Drawable editTextBackground = mEditText.getBackground();
+        Drawable editTextBackground = mEditText.getBackground();
         if (editTextBackground == null) {
             return;
+        }
+
+        if (android.support.v7.widget.DrawableUtils.canSafelyMutateDrawable(editTextBackground)) {
+            editTextBackground = editTextBackground.mutate();
         }
 
         if (mErrorShown && mErrorView != null) {
@@ -664,12 +725,42 @@ public class TextInputLayout extends LinearLayout {
         } else {
             // Else reset the color filter and refresh the drawable state so that the
             // normal tint is used
-            editTextBackground.clearColorFilter();
+            clearColorFilter(editTextBackground);
             mEditText.refreshDrawableState();
         }
     }
 
+    private static void clearColorFilter(@NonNull Drawable drawable) {
+        drawable.clearColorFilter();
+
+        if (Build.VERSION.SDK_INT == 21 || Build.VERSION.SDK_INT == 22) {
+            // API 21 + 22 have an issue where clearing a color filter on a DrawableContainer
+            // will not propagate to all of its children. To workaround this we unwrap the drawable
+            // to find any DrawableContainers, and then unwrap those to clear the filter on its
+            // children manually
+            if (drawable instanceof InsetDrawable) {
+                clearColorFilter(((InsetDrawable) drawable).getDrawable());
+            } else if (drawable instanceof DrawableWrapper) {
+                clearColorFilter(((DrawableWrapper) drawable).getWrappedDrawable());
+            } else if (drawable instanceof DrawableContainer) {
+                final DrawableContainer container = (DrawableContainer) drawable;
+                final DrawableContainer.DrawableContainerState state =
+                        (DrawableContainer.DrawableContainerState) container.getConstantState();
+                if (state != null) {
+                    for (int i = 0, count = state.getChildCount(); i < count; i++) {
+                        clearColorFilter(state.getChild(i));
+                    }
+                }
+            }
+        }
+    }
+
     private void ensureBackgroundDrawableStateWorkaround() {
+        final int sdk = Build.VERSION.SDK_INT;
+        if (sdk != 21 && sdk != 22) {
+            // The workaround is only required on API 21-22
+            return;
+        }
         final Drawable bg = mEditText.getBackground();
         if (bg == null) {
             return;
@@ -701,6 +792,68 @@ public class TextInputLayout extends LinearLayout {
         }
     }
 
+    static class SavedState extends AbsSavedState {
+        CharSequence error;
+
+        SavedState(Parcelable superState) {
+            super(superState);
+        }
+
+        public SavedState(Parcel source, ClassLoader loader) {
+            super(source, loader);
+            error = TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(source);
+
+        }
+
+        @Override
+        public void writeToParcel(Parcel dest, int flags) {
+            super.writeToParcel(dest, flags);
+            TextUtils.writeToParcel(error, dest, flags);
+        }
+
+        @Override
+        public String toString() {
+            return "TextInputLayout.SavedState{"
+                    + Integer.toHexString(System.identityHashCode(this))
+                    + " error=" + error + "}";
+        }
+
+        public static final Creator<SavedState> CREATOR = ParcelableCompat.newCreator(
+                new ParcelableCompatCreatorCallbacks<SavedState>() {
+                    @Override
+                    public SavedState createFromParcel(Parcel in, ClassLoader loader) {
+                        return new SavedState(in, loader);
+                    }
+
+                    @Override
+                    public SavedState[] newArray(int size) {
+                        return new SavedState[size];
+                    }
+                });
+    }
+
+    @Override
+    public Parcelable onSaveInstanceState() {
+        Parcelable superState = super.onSaveInstanceState();
+        SavedState ss = new SavedState(superState);
+        if (mErrorShown) {
+            ss.error = getError();
+        }
+        return ss;
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Parcelable state) {
+        if (!(state instanceof SavedState)) {
+            super.onRestoreInstanceState(state);
+            return;
+        }
+        SavedState ss = (SavedState) state;
+        super.onRestoreInstanceState(ss.getSuperState());
+        setError(ss.error);
+        requestLayout();
+    }
+
     /**
      * Returns the error message that was set to be displayed with
      * {@link #setError(CharSequence)}, or <code>null</code> if no error was set
@@ -710,10 +863,7 @@ public class TextInputLayout extends LinearLayout {
      */
     @Nullable
     public CharSequence getError() {
-        if (mErrorEnabled && mErrorView != null && mErrorView.getVisibility() == VISIBLE) {
-            return mErrorView.getText();
-        }
-        return null;
+        return mErrorEnabled ? mError : null;
     }
 
     /**
@@ -816,15 +966,6 @@ public class TextInputLayout extends LinearLayout {
         }
         mAnimator.setFloatValues(mCollapsingTextHelper.getExpansionFraction(), target);
         mAnimator.start();
-    }
-
-    private int getThemeAttrColor(int attr) {
-        TypedValue tv = new TypedValue();
-        if (getContext().getTheme().resolveAttribute(attr, tv, true)) {
-            return tv.data;
-        } else {
-            return Color.MAGENTA;
-        }
     }
 
     private class TextInputAccessibilityDelegate extends AccessibilityDelegateCompat {

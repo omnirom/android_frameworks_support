@@ -19,6 +19,7 @@ package android.support.v7.app;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.res.TypedArray;
+import android.os.Build;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.util.ArrayMap;
@@ -38,6 +39,7 @@ import android.support.v7.widget.AppCompatRatingBar;
 import android.support.v7.widget.AppCompatSeekBar;
 import android.support.v7.widget.AppCompatSpinner;
 import android.support.v7.widget.AppCompatTextView;
+import android.support.v7.widget.TintContextWrapper;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.InflateException;
@@ -62,6 +64,12 @@ class AppCompatViewInflater {
             Context.class, AttributeSet.class};
     private static final int[] sOnClickAttrs = new int[]{android.R.attr.onClick};
 
+    private static final String[] sClassPrefixList = {
+            "android.widget.",
+            "android.view.",
+            "android.webkit."
+    };
+
     private static final String LOG_TAG = "AppCompatViewInflater";
 
     private static final Map<String, Constructor<? extends View>> sConstructorMap
@@ -71,7 +79,7 @@ class AppCompatViewInflater {
 
     public final View createView(View parent, final String name, @NonNull Context context,
             @NonNull AttributeSet attrs, boolean inheritContext,
-            boolean readAndroidTheme, boolean readAppTheme) {
+            boolean readAndroidTheme, boolean readAppTheme, boolean wrapContext) {
         final Context originalContext = context;
 
         // We can emulate Lollipop's android:theme attribute propagating down the view hierarchy
@@ -82,6 +90,9 @@ class AppCompatViewInflater {
         if (readAndroidTheme || readAppTheme) {
             // We then apply the theme on the context, if specified
             context = themifyContext(context, attrs, readAndroidTheme, readAppTheme);
+        }
+        if (wrapContext) {
+            context = TintContextWrapper.wrap(context);
         }
 
         View view = null;
@@ -153,8 +164,13 @@ class AppCompatViewInflater {
             mConstructorArgs[1] = attrs;
 
             if (-1 == name.indexOf('.')) {
-                // try the android.widget prefix first...
-                return createView(context, name, "android.widget.");
+                for (int i = 0; i < sClassPrefixList.length; i++) {
+                    final View view = createView(context, name, sClassPrefixList[i]);
+                    if (view != null) {
+                        return view;
+                    }
+                }
+                return null;
             } else {
                 return createView(context, name, null);
             }
@@ -177,9 +193,11 @@ class AppCompatViewInflater {
     private void checkOnClickListener(View view, AttributeSet attrs) {
         final Context context = view.getContext();
 
-        if (!ViewCompat.hasOnClickListeners(view) || !(context instanceof ContextWrapper)) {
-            // Skip our compat functionality if: the view doesn't have an onClickListener,
-            // or the Context isn't a ContextWrapper
+        if (!(context instanceof ContextWrapper) ||
+                (Build.VERSION.SDK_INT >= 15 && !ViewCompat.hasOnClickListeners(view))) {
+            // Skip our compat functionality if: the Context isn't a ContextWrapper, or
+            // the view doesn't have an OnClickListener (we can only rely on this on API 15+ so
+            // always use our compat code on older devices)
             return;
         }
 

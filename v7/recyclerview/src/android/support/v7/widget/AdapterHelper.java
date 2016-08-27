@@ -502,6 +502,9 @@ class AdapterHelper implements OpReorderer.Callback {
      * @return True if updates should be processed.
      */
     boolean onItemRangeChanged(int positionStart, int itemCount, Object payload) {
+        if (itemCount < 1) {
+            return false;
+        }
         mPendingUpdates.add(obtainUpdateOp(UpdateOp.UPDATE, positionStart, itemCount, payload));
         mExistingUpdateTypes |= UpdateOp.UPDATE;
         return mPendingUpdates.size() == 1;
@@ -511,6 +514,9 @@ class AdapterHelper implements OpReorderer.Callback {
      * @return True if updates should be processed.
      */
     boolean onItemRangeInserted(int positionStart, int itemCount) {
+        if (itemCount < 1) {
+            return false;
+        }
         mPendingUpdates.add(obtainUpdateOp(UpdateOp.ADD, positionStart, itemCount, null));
         mExistingUpdateTypes |= UpdateOp.ADD;
         return mPendingUpdates.size() == 1;
@@ -520,6 +526,9 @@ class AdapterHelper implements OpReorderer.Callback {
      * @return True if updates should be processed.
      */
     boolean onItemRangeRemoved(int positionStart, int itemCount) {
+        if (itemCount < 1) {
+            return false;
+        }
         mPendingUpdates.add(obtainUpdateOp(UpdateOp.REMOVE, positionStart, itemCount, null));
         mExistingUpdateTypes |= UpdateOp.REMOVE;
         return mPendingUpdates.size() == 1;
@@ -530,7 +539,7 @@ class AdapterHelper implements OpReorderer.Callback {
      */
     boolean onItemRangeMoved(int from, int to, int itemCount) {
         if (from == to) {
-            return false;//no-op
+            return false; // no-op
         }
         if (itemCount != 1) {
             throw new IllegalArgumentException("Moving more than 1 item is not supported yet");
@@ -610,6 +619,10 @@ class AdapterHelper implements OpReorderer.Callback {
             }
         }
         return position;
+    }
+
+    boolean hasUpdates() {
+        return !mPostponedList.isEmpty() && !mPendingUpdates.isEmpty();
     }
 
     /**

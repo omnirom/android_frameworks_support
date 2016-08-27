@@ -148,6 +148,8 @@ public abstract class PreferenceFragmentCompat extends Fragment implements
         }
     };
 
+    private Runnable mSelectPreferenceRunnable;
+
     /**
      * Interface that PreferenceFragment's containing activity should
      * implement to be able to process preference items that wish to
@@ -242,7 +244,7 @@ public abstract class PreferenceFragmentCompat extends Fragment implements
 
         final Drawable divider = a.getDrawable(
                 R.styleable.PreferenceFragmentCompat_android_divider);
-        final int dividerHeight = a.getInt(
+        final int dividerHeight = a.getDimensionPixelSize(
                 R.styleable.PreferenceFragmentCompat_android_dividerHeight, -1);
 
         a.recycle();
@@ -257,10 +259,10 @@ public abstract class PreferenceFragmentCompat extends Fragment implements
 
         final View view = themedInflater.inflate(mLayoutResId, container, false);
 
-        final View rawListContainer = view.findViewById(R.id.list_container);
+        final View rawListContainer = view.findViewById(AndroidResources.ANDROID_R_LIST_CONTAINER);
         if (!(rawListContainer instanceof ViewGroup)) {
-            throw new RuntimeException("Content has view with id attribute 'R.id.list_container' "
-                    + "that is not a ViewGroup class");
+            throw new RuntimeException("Content has view with id attribute "
+                    + "'android.R.id.list_container' that is not a ViewGroup class");
         }
 
         final ViewGroup listContainer = (ViewGroup) rawListContainer;
@@ -281,6 +283,7 @@ public abstract class PreferenceFragmentCompat extends Fragment implements
 
         listContainer.addView(mList);
         mHandler.post(mRequestFocus);
+
         return view;
     }
 
@@ -309,14 +312,23 @@ public abstract class PreferenceFragmentCompat extends Fragment implements
     }
 
     @Override
-    public void onActivityCreated(Bundle savedInstanceState) {
-        super.onActivityCreated(savedInstanceState);
+    public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
 
         if (mHavePrefs) {
             bindPreferences();
+            if (mSelectPreferenceRunnable != null) {
+                mSelectPreferenceRunnable.run();
+                mSelectPreferenceRunnable = null;
+            }
         }
 
         mInitDone = true;
+    }
+
+    @Override
+    public void onActivityCreated(Bundle savedInstanceState) {
+        super.onActivityCreated(savedInstanceState);
 
         if (savedInstanceState != null) {
             Bundle container = savedInstanceState.getBundle(PREFERENCES_TAG);
@@ -345,9 +357,12 @@ public abstract class PreferenceFragmentCompat extends Fragment implements
 
     @Override
     public void onDestroyView() {
-        mList = null;
         mHandler.removeCallbacks(mRequestFocus);
         mHandler.removeMessages(MSG_BIND_PREFERENCES);
+        if (mHavePrefs) {
+            unbindPreferences();
+        }
+        mList = null;
         super.onDestroyView();
     }
 
@@ -514,6 +529,14 @@ public abstract class PreferenceFragmentCompat extends Fragment implements
         onBindPreferences();
     }
 
+    private void unbindPreferences() {
+        final PreferenceScreen preferenceScreen = getPreferenceScreen();
+        if (preferenceScreen != null) {
+            preferenceScreen.onDetached();
+        }
+        onUnbindPreferences();
+    }
+
     /** @hide */
     protected void onBindPreferences() {
     }
@@ -545,6 +568,8 @@ public abstract class PreferenceFragmentCompat extends Fragment implements
                 .inflate(R.layout.preference_recyclerview, parent, false);
 
         recyclerView.setLayoutManager(onCreateLayoutManager());
+        recyclerView.setAccessibilityDelegateCompat(
+                new PreferenceRecyclerViewAccessibilityDelegate(recyclerView));
 
         return recyclerView;
     }
@@ -620,6 +645,113 @@ public abstract class PreferenceFragmentCompat extends Fragment implements
         return null;
     }
 
+    public void scrollToPreference(final String key) {
+        scrollToPreferenceInternal(null, key);
+    }
+
+    public void scrollToPreference(final Preference preference) {
+        scrollToPreferenceInternal(preference, null);
+    }
+
+    private void scrollToPreferenceInternal(final Preference preference, final String key) {
+        final Runnable r = new Runnable() {
+            @Override
+            public void run() {
+                final RecyclerView.Adapter adapter = mList.getAdapter();
+                if (!(adapter instanceof
+                        PreferenceGroup.PreferencePositionCallback)) {
+                    if (adapter != null) {
+                        throw new IllegalStateException("Adapter must implement "
+                                + "PreferencePositionCallback");
+                    } else {
+                        // Adapter was set to null, so don't scroll I guess?
+                        return;
+                    }
+                }
+                final int position;
+                if (preference != null) {
+                    position = ((PreferenceGroup.PreferencePositionCallback) adapter)
+                            .getPreferenceAdapterPosition(preference);
+                } else {
+                    position = ((PreferenceGroup.PreferencePositionCallback) adapter)
+                            .getPreferenceAdapterPosition(key);
+                }
+                if (position != RecyclerView.NO_POSITION) {
+                    mList.scrollToPosition(position);
+                } else {
+                    // Item not found, wait for an update and try again
+                    adapter.registerAdapterDataObserver(
+                            new ScrollToPreferenceObserver(adapter, mList, preference, key));
+                }
+            }
+        };
+        if (mList == null) {
+            mSelectPreferenceRunnable = r;
+        } else {
+            r.run();
+        }
+    }
+
+    private static class ScrollToPreferenceObserver extends RecyclerView.AdapterDataObserver {
+        private final RecyclerView.Adapter mAdapter;
+        private final RecyclerView mList;
+        private final Preference mPreference;
+        private final String mKey;
+
+        public ScrollToPreferenceObserver(RecyclerView.Adapter adapter, RecyclerView list,
+                Preference preference, String key) {
+            mAdapter = adapter;
+            mList = list;
+            mPreference = preference;
+            mKey = key;
+        }
+
+        private void scrollToPreference() {
+            mAdapter.unregisterAdapterDataObserver(this);
+            final int position;
+            if (mPreference != null) {
+                position = ((PreferenceGroup.PreferencePositionCallback) mAdapter)
+                        .getPreferenceAdapterPosition(mPreference);
+            } else {
+                position = ((PreferenceGroup.PreferencePositionCallback) mAdapter)
+                        .getPreferenceAdapterPosition(mKey);
+            }
+            if (position != RecyclerView.NO_POSITION) {
+                mList.scrollToPosition(position);
+            }
+        }
+
+        @Override
+        public void onChanged() {
+            scrollToPreference();
+        }
+
+        @Override
+        public void onItemRangeChanged(int positionStart, int itemCount) {
+            scrollToPreference();
+        }
+
+        @Override
+        public void onItemRangeChanged(int positionStart, int itemCount, Object payload) {
+            scrollToPreference();
+        }
+
+        @Override
+        public void onItemRangeInserted(int positionStart, int itemCount) {
+            scrollToPreference();
+        }
+
+        @Override
+        public void onItemRangeRemoved(int positionStart, int itemCount) {
+            scrollToPreference();
+        }
+
+        @Override
+        public void onItemRangeMoved(int fromPosition, int toPosition, int itemCount) {
+            scrollToPreference();
+        }
+    }
+
     private class DividerDecoration extends RecyclerView.ItemDecoration {
 
         private Drawable mDivider;
@@ -634,11 +766,6 @@ public abstract class PreferenceFragmentCompat extends Fragment implements
             final int width = parent.getWidth();
             for (int childViewIndex = 0; childViewIndex < childCount; childViewIndex++) {
                 final View view = parent.getChildAt(childViewIndex);
-                if (shouldDrawDividerAbove(view, parent)) {
-                    int top = (int) ViewCompat.getY(view);
-                    mDivider.setBounds(0, top, width, top + mDividerHeight);
-                    mDivider.draw(c);
-                }
                 if (shouldDrawDividerBelow(view, parent)) {
                     int top = (int) ViewCompat.getY(view) + view.getHeight();
                     mDivider.setBounds(0, top, width, top + mDividerHeight);
@@ -650,32 +777,27 @@ public abstract class PreferenceFragmentCompat extends Fragment implements
         @Override
         public void getItemOffsets(Rect outRect, View view, RecyclerView parent,
                 RecyclerView.State state) {
-            if (shouldDrawDividerAbove(view, parent)) {
-                outRect.top = mDividerHeight;
-            }
             if (shouldDrawDividerBelow(view, parent)) {
                 outRect.bottom = mDividerHeight;
             }
         }
 
-        private boolean shouldDrawDividerAbove(View view, RecyclerView parent) {
-            final RecyclerView.ViewHolder holder = parent.getChildViewHolder(view);
-            return holder.getAdapterPosition() == 0 &&
-                    ((PreferenceViewHolder) holder).isDividerAllowedAbove();
-        }
-
         private boolean shouldDrawDividerBelow(View view, RecyclerView parent) {
-            final PreferenceViewHolder holder =
-                    (PreferenceViewHolder) parent.getChildViewHolder(view);
+            final RecyclerView.ViewHolder holder = parent.getChildViewHolder(view);
+            final boolean dividerAllowedBelow = holder instanceof PreferenceViewHolder
+                    && ((PreferenceViewHolder) holder).isDividerAllowedBelow();
+            if (!dividerAllowedBelow) {
+                return false;
+            }
             boolean nextAllowed = true;
             int index = parent.indexOfChild(view);
             if (index < parent.getChildCount() - 1) {
                 final View nextView = parent.getChildAt(index + 1);
-                final PreferenceViewHolder nextHolder =
-                        (PreferenceViewHolder) parent.getChildViewHolder(nextView);
-                nextAllowed = nextHolder.isDividerAllowedAbove();
+                final RecyclerView.ViewHolder nextHolder = parent.getChildViewHolder(nextView);
+                nextAllowed = nextHolder instanceof PreferenceViewHolder
+                        && ((PreferenceViewHolder) nextHolder).isDividerAllowedAbove();
             }
-            return nextAllowed && holder.isDividerAllowedBelow();
+            return nextAllowed;
         }
 
         public void setDivider(Drawable divider) {

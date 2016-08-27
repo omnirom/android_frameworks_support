@@ -54,7 +54,7 @@ public class AppCompatImageView extends ImageView implements TintableBackgroundV
     }
 
     public AppCompatImageView(Context context, AttributeSet attrs, int defStyleAttr) {
-        super(context, attrs, defStyleAttr);
+        super(TintContextWrapper.wrap(context), attrs, defStyleAttr);
 
         final AppCompatDrawableManager drawableManager = AppCompatDrawableManager.get();
 
@@ -145,5 +145,9 @@ public class AppCompatImageView extends ImageView implements TintableBackgroundV
         if (mBackgroundTintHelper != null) {
             mBackgroundTintHelper.applySupportBackgroundTint();
         }
+    }
+
+    public boolean hasOverlappingRendering() {
+        return mImageHelper.hasOverlappingRendering() && super.hasOverlappingRendering();
     }
 }

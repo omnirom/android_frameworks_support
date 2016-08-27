@@ -27,6 +27,7 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
+import android.support.annotation.Nullable;
 
 import static android.support.v7.widget.RoundRectDrawableWithShadow.calculateVerticalPadding;
 import static android.support.v7.widget.RoundRectDrawableWithShadow.calculateHorizontalPadding;
@@ -46,16 +47,23 @@ class RoundRectDrawable extends Drawable {
     private boolean mInsetForPadding = false;
     private boolean mInsetForRadius = true;
 
+    private ColorStateList mBackground;
     private PorterDuffColorFilter mTintFilter;
     private ColorStateList mTint;
-    private PorterDuff.Mode mTintMode;
+    private PorterDuff.Mode mTintMode = PorterDuff.Mode.SRC_IN;
 
-    public RoundRectDrawable(int backgroundColor, float radius) {
+    public RoundRectDrawable(ColorStateList backgroundColor, float radius) {
         mRadius = radius;
         mPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
-        mPaint.setColor(backgroundColor);
+        setBackground(backgroundColor);
+
         mBoundsF = new RectF();
         mBoundsI = new Rect();
+    }
+
+    private void setBackground(ColorStateList color) {
+        mBackground = (color == null) ?  ColorStateList.valueOf(Color.TRANSPARENT) : color;
+        mPaint.setColor(mBackground.getColorForState(getState(), mBackground.getDefaultColor()));
     }
 
     void setPadding(float padding, boolean insetForPadding, boolean insetForRadius) {
@@ -147,9 +155,13 @@ class RoundRectDrawable extends Drawable {
         return mRadius;
     }
 
-    public void setColor(int color) {
-        mPaint.setColor(color);
+    public void setColor(@Nullable ColorStateList color) {
+        setBackground(color);
         invalidateSelf();
+    }
+
+    public ColorStateList getColor() {
+        return mBackground;
     }
 
     @Override
@@ -168,16 +180,22 @@ class RoundRectDrawable extends Drawable {
 
     @Override
     protected boolean onStateChange(int[] stateSet) {
+        final int newColor = mBackground.getColorForState(stateSet, mBackground.getDefaultColor());
+        final boolean colorChanged = newColor != mPaint.getColor();
+        if (colorChanged) {
+            mPaint.setColor(newColor);
+        }
         if (mTint != null && mTintMode != null) {
             mTintFilter = createTintFilter(mTint, mTintMode);
             return true;
         }
-        return false;
+        return colorChanged;
     }
 
     @Override
     public boolean isStateful() {
-        return (mTint != null && mTint.isStateful()) || super.isStateful();
+        return (mTint != null && mTint.isStateful())
+                || (mBackground != null && mBackground.isStateful()) || super.isStateful();
     }
 
     /**

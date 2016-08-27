@@ -16,41 +16,78 @@
 
 package android.support.v7.widget;
 
+import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.support.v4.content.ContextCompat;
+import android.support.v7.appcompat.R;
 import android.util.AttributeSet;
 import android.widget.ImageView;
 
-class AppCompatImageHelper {
-
-    private static final int[] VIEW_ATTRS = {android.R.attr.src};
+/**
+ * @hide
+ */
+public class AppCompatImageHelper {
 
     private final ImageView mView;
     private final AppCompatDrawableManager mDrawableManager;
 
-    AppCompatImageHelper(ImageView view, AppCompatDrawableManager drawableManager) {
+    public AppCompatImageHelper(ImageView view, AppCompatDrawableManager drawableManager) {
         mView = view;
         mDrawableManager = drawableManager;
     }
 
-    void loadFromAttributes(AttributeSet attrs, int defStyleAttr) {
-        TintTypedArray a = TintTypedArray.obtainStyledAttributes(mView.getContext(), attrs,
-                VIEW_ATTRS, defStyleAttr, 0);
+    public void loadFromAttributes(AttributeSet attrs, int defStyleAttr) {
+        TintTypedArray a = null;
         try {
-            if (a.hasValue(0)) {
-                mView.setImageDrawable(a.getDrawable(0));
+            Drawable drawable = mView.getDrawable();
+
+            if (drawable == null) {
+                a = TintTypedArray.obtainStyledAttributes(mView.getContext(), attrs,
+                        R.styleable.AppCompatImageView, defStyleAttr, 0);
+
+                // If the view doesn't already have a drawable (from android:src), try loading
+                // it from srcCompat
+                final int id = a.getResourceId(R.styleable.AppCompatImageView_srcCompat, -1);
+                if (id != -1) {
+                    drawable = mDrawableManager.getDrawable(mView.getContext(), id);
+                    if (drawable != null) {
+                        mView.setImageDrawable(drawable);
+                    }
+                }
+            }
+
+            if (drawable != null) {
+                DrawableUtils.fixDrawable(drawable);
             }
         } finally {
-            a.recycle();
+            if (a != null) {
+                a.recycle();
+            }
         }
     }
 
-    void setImageResource(int resId) {
+    public void setImageResource(int resId) {
         if (resId != 0) {
-            mView.setImageDrawable(mDrawableManager != null
+            final Drawable d = mDrawableManager != null
                     ? mDrawableManager.getDrawable(mView.getContext(), resId)
-                    : ContextCompat.getDrawable(mView.getContext(), resId));
+                    : ContextCompat.getDrawable(mView.getContext(), resId);
+            if (d != null) {
+                DrawableUtils.fixDrawable(d);
+            }
+            mView.setImageDrawable(d);
         } else {
             mView.setImageDrawable(null);
         }
+    }
+
+    boolean hasOverlappingRendering() {
+        final Drawable background = mView.getBackground();
+        if (Build.VERSION.SDK_INT >= 21
+                && background instanceof android.graphics.drawable.RippleDrawable) {
+            // RippleDrawable has an issue on L+ when used with an alpha animation.
+            // This workaround should be disabled when the platform bug is fixed. See b/27715789
+            return false;
+        }
+        return true;
     }
 }

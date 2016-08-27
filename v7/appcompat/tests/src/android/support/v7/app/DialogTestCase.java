@@ -21,6 +21,9 @@ import org.junit.Test;
 import android.app.Dialog;
 import android.os.Bundle;
 
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
 public class DialogTestCase extends BaseInstrumentationTestCase<WindowDecorActionBarActivity> {
 
     public DialogTestCase() {
@@ -43,7 +46,7 @@ public class DialogTestCase extends BaseInstrumentationTestCase<WindowDecorActio
     public static class TestDialogFragment extends AppCompatDialogFragment {
         @Override
         public Dialog onCreateDialog(Bundle savedInstanceState) {
-            return new AlertDialog.Builder(getActivity())
+            return new AlertDialog.Builder(getContext())
                     .setTitle("Test")
                     .setMessage("Message")
                     .setPositiveButton("Button", null)

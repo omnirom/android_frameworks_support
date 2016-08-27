@@ -19,12 +19,20 @@ package android.support.v7.app;
 import org.junit.Test;
 
 import android.support.v7.appcompat.test.R;
+import android.support.v7.testutils.BaseTestActivity;
 import android.support.v7.view.ActionMode;
+import android.test.suitebuilder.annotation.MediumTest;
+import android.test.suitebuilder.annotation.SmallTest;
 import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 public abstract class BaseKeyEventsTestCase<A extends BaseTestActivity>
         extends BaseInstrumentationTestCase<A> {
@@ -34,6 +42,7 @@ public abstract class BaseKeyEventsTestCase<A extends BaseTestActivity>
     }
 
     @Test
+    @SmallTest
     public void testBackDismissesActionMode() {
         final AtomicBoolean destroyed = new AtomicBoolean();
 
@@ -69,11 +78,12 @@ public abstract class BaseKeyEventsTestCase<A extends BaseTestActivity>
         getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
         getInstrumentation().waitForIdleSync();
 
-        assertFalse("Activity was not destroyed", getActivity().isDestroyed());
+        assertFalse("Activity was not finished", getActivity().isFinishing());
         assertTrue("ActionMode was destroyed", destroyed.get());
     }
 
     @Test
+    @SmallTest
     public void testBackCollapsesSearchView() throws InterruptedException {
         // First expand the SearchView
         getActivity().runOnUiThread(new Runnable() {
@@ -96,11 +106,12 @@ public abstract class BaseKeyEventsTestCase<A extends BaseTestActivity>
         }
 
         // Check that the Activity is still running and the SearchView is not expanded
-        assertFalse("Activity was not destroyed", getActivity().isDestroyed());
+        assertFalse("Activity was not finished", getActivity().isFinishing());
         assertFalse("SearchView was collapsed", getActivity().isSearchViewExpanded());
     }
 
     @Test
+    @SmallTest
     public void testMenuPressInvokesPanelCallbacks() throws InterruptedException {
         getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
         getInstrumentation().waitForIdleSync();
@@ -112,6 +123,7 @@ public abstract class BaseKeyEventsTestCase<A extends BaseTestActivity>
     }
 
     @Test
+    @SmallTest
     public void testBackPressWithMenuInvokesOnPanelClosed() throws InterruptedException {
         getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
         getInstrumentation().waitForIdleSync();
@@ -122,17 +134,19 @@ public abstract class BaseKeyEventsTestCase<A extends BaseTestActivity>
     }
 
     @Test
-    public void testBackPressWithEmptyMenuDestroysActivity() throws InterruptedException {
+    @SmallTest
+    public void testBackPressWithEmptyMenuFinishesActivity() throws InterruptedException {
         repopulateWithEmptyMenu();
 
         getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
         getInstrumentation().waitForIdleSync();
 
         getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
-        waitAssertDestroyed();
+        assertTrue(getActivity().isFinishing());
     }
 
     @Test
+    @SmallTest
     public void testDelKeyEventReachesActivity() {
         // First send the event
         getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_DEL);
@@ -148,6 +162,7 @@ public abstract class BaseKeyEventsTestCase<A extends BaseTestActivity>
     }
 
     @Test
+    @SmallTest
     public void testMenuKeyEventReachesActivity() throws InterruptedException {
         getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_MENU);
         getInstrumentation().waitForIdleSync();
@@ -161,25 +176,13 @@ public abstract class BaseKeyEventsTestCase<A extends BaseTestActivity>
         assertEquals("onKeyDown event matches", KeyEvent.KEYCODE_MENU, upEvent.getKeyCode());
     }
 
-    private void waitAssertDestroyed() throws InterruptedException {
-        int count = 0;
-        while (count++ < 10) {
-            if (!getActivity().isDestroyed()) {
-                Thread.sleep(50);
-            } else {
-                break;
-            }
-        }
-        assertTrue("Activity destroyed", getActivity().isDestroyed());
-    }
-
     private void repopulateWithEmptyMenu() throws InterruptedException {
         int count = 0;
         getActivity().setShouldPopulateOptionsMenu(false);
         while (count++ < 10) {
             Menu menu = getActivity().getMenu();
             if (menu == null || menu.size() != 0) {
-                Thread.sleep(50);
+                Thread.sleep(100);
             } else {
                 return;
             }

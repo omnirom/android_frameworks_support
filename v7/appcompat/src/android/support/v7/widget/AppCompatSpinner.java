@@ -27,10 +27,12 @@ import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.support.annotation.DrawableRes;
 import android.support.annotation.Nullable;
+import android.support.v4.content.ContextCompat;
 import android.support.v4.view.TintableBackgroundView;
 import android.support.v4.view.ViewCompat;
 import android.support.v7.appcompat.R;
 import android.support.v7.view.ContextThemeWrapper;
+import android.support.v7.view.menu.ShowableListMenu;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -47,14 +49,14 @@ import android.widget.SpinnerAdapter;
 
 
 /**
- * A {@link Spinner} which supports compatible features on older version of the platform,
+ * A {@link Spinner} which supports compatible features on older versions of the platform,
  * including:
  * <ul>
- * <li>Allows dynamic tint of it background via the background tint methods in
+ * <li>Dynamic tinting of the background via the background tint methods in
  * {@link android.support.v4.view.ViewCompat}.</li>
- * <li>Allows setting of the background tint using {@link R.attr#backgroundTint} and
+ * <li>Configuring the background tint using {@link R.attr#backgroundTint} and
  * {@link R.attr#backgroundTintMode}.</li>
- * <li>Allows setting of the popups theme using {@link R.attr#popupTheme}.</li>
+ * <li>Setting the popup theme using {@link R.attr#popupTheme}.</li>
  * </ul>
  *
  * <p>This will automatically be used when you use {@link Spinner} in your layouts.
@@ -83,7 +85,7 @@ public class AppCompatSpinner extends Spinner implements TintableBackgroundView 
     private Context mPopupContext;
 
     /** Forwarding listener used to implement drag-to-open. */
-    private ListPopupWindow.ForwardingListener mForwardingListener;
+    private ForwardingListener mForwardingListener;
 
     /** Temporary holder for setAdapter() calls from the super constructor. */
     private SpinnerAdapter mTempAdapter;
@@ -249,9 +251,9 @@ public class AppCompatSpinner extends Spinner implements TintableBackgroundView 
                 pa.recycle();
 
                 mPopup = popup;
-                mForwardingListener = new ListPopupWindow.ForwardingListener(this) {
+                mForwardingListener = new ForwardingListener(this) {
                     @Override
-                    public ListPopupWindow getPopup() {
+                    public ShowableListMenu getPopup() {
                         return popup;
                     }
 
@@ -268,8 +270,8 @@ public class AppCompatSpinner extends Spinner implements TintableBackgroundView 
 
         final CharSequence[] entries = a.getTextArray(R.styleable.Spinner_android_entries);
         if (entries != null) {
-            final ArrayAdapter<CharSequence> adapter = new ArrayAdapter<>(context,
-                    R.layout.support_simple_spinner_dropdown_item, entries);
+            final ArrayAdapter<CharSequence> adapter = new ArrayAdapter<>(
+                    context, android.R.layout.simple_spinner_item, entries);
             adapter.setDropDownViewResource(R.layout.support_simple_spinner_dropdown_item);
             setAdapter(adapter);
         }
@@ -309,7 +311,7 @@ public class AppCompatSpinner extends Spinner implements TintableBackgroundView 
     }
 
     public void setPopupBackgroundResource(@DrawableRes int resId) {
-        setPopupBackgroundDrawable(getPopupContext().getDrawable(resId));
+        setPopupBackgroundDrawable(ContextCompat.getDrawable(getPopupContext(), resId));
     }
 
     public Drawable getPopupBackground() {
@@ -427,10 +429,15 @@ public class AppCompatSpinner extends Spinner implements TintableBackgroundView 
 
     @Override
     public boolean performClick() {
-        if (mPopup != null && !mPopup.isShowing()) {
-            mPopup.show();
+        if (mPopup != null) {
+            // If we have a popup, show it if needed, or just consume the click...
+            if (!mPopup.isShowing()) {
+                mPopup.show();
+            }
             return true;
         }
+
+        // Else let the platform handle the click
         return super.performClick();
     }
 

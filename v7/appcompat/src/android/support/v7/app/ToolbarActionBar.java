@@ -38,6 +38,7 @@ import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.SpinnerAdapter;
 
@@ -230,6 +231,16 @@ class ToolbarActionBar extends ActionBar {
     @Override
     public void setWindowTitle(CharSequence title) {
         mDecorToolbar.setWindowTitle(title);
+    }
+
+    @Override
+    public boolean requestFocus() {
+        final ViewGroup viewGroup = mDecorToolbar.getViewGroup();
+        if (viewGroup != null && !viewGroup.hasFocus()) {
+            viewGroup.requestFocus();
+            return true;
+        }
+        return false;
     }
 
     @Override
@@ -472,6 +483,12 @@ class ToolbarActionBar extends ActionBar {
         // This will block the window from preparing a temporary panel to handle
         // keyboard shortcuts.
         return true;
+    }
+
+    @Override
+    void onDestroy() {
+        // Remove any invalidation callbacks
+        mDecorToolbar.getViewGroup().removeCallbacks(mMenuInvalidator);
     }
 
     public void addOnMenuVisibilityListener(OnMenuVisibilityListener listener) {

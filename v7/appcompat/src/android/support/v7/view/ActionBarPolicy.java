@@ -17,11 +17,14 @@
 package android.support.v7.view;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.os.Build;
+import android.support.v4.content.res.ConfigurationHelper;
 import android.support.v4.view.ViewConfigurationCompat;
 import android.support.v7.appcompat.R;
+import android.util.DisplayMetrics;
 import android.view.ViewConfiguration;
 
 /**
@@ -42,8 +45,31 @@ public class ActionBarPolicy {
         mContext = context;
     }
 
+    /**
+     * Returns the maximum number of action buttons that should be permitted within an action
+     * bar/action mode. This will be used to determine how many showAsAction="ifRoom" items can fit.
+     * "always" items can override this.
+     */
     public int getMaxActionButtons() {
-        return mContext.getResources().getInteger(R.integer.abc_max_action_buttons);
+        final Resources res = mContext.getResources();
+        final int widthDp = ConfigurationHelper.getScreenWidthDp(res);
+        final int heightDp = ConfigurationHelper.getScreenHeightDp(res);
+        final int smallest = ConfigurationHelper.getSmallestScreenWidthDp(res);
+
+        if (smallest > 600 || widthDp > 600 || (widthDp > 960 && heightDp > 720)
+                || (widthDp > 720 && heightDp > 960)) {
+            // For values-w600dp, values-sw600dp and values-xlarge.
+            return 5;
+        } else if (widthDp >= 500 || (widthDp > 640 && heightDp > 480)
+                || (widthDp > 480 && heightDp > 640)) {
+            // For values-w500dp and values-large.
+            return 4;
+        } else if (widthDp >= 360) {
+            // For values-w360dp.
+            return 3;
+        } else {
+            return 2;
+        }
     }
 
     public boolean showsOverflowMenuButton() {
@@ -59,14 +85,7 @@ public class ActionBarPolicy {
     }
 
     public boolean hasEmbeddedTabs() {
-        final int targetSdk = mContext.getApplicationInfo().targetSdkVersion;
-        if (targetSdk >= Build.VERSION_CODES.JELLY_BEAN) {
-            return mContext.getResources().getBoolean(R.bool.abc_action_bar_embed_tabs);
-        }
-
-        // The embedded tabs policy changed in Jellybean; give older apps the old policy
-        // so they get what they expect.
-        return mContext.getResources().getBoolean(R.bool.abc_action_bar_embed_tabs_pre_jb);
+        return mContext.getResources().getBoolean(R.bool.abc_action_bar_embed_tabs);
     }
 
     public int getTabContainerHeight() {

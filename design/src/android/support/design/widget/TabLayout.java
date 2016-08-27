@@ -24,6 +24,7 @@ import android.content.res.TypedArray;
 import android.database.DataSetObserver;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.support.annotation.ColorInt;
@@ -85,13 +86,61 @@ import static android.support.v4.view.ViewPager.SCROLL_STATE_SETTLING;
  * </pre>
  * You should set a listener via {@link #setOnTabSelectedListener(OnTabSelectedListener)} to be
  * notified when any tab's selection state has been changed.
+ *
+ * <p>You can also add items to TabLayout in your layout through the use of {@link TabItem}.
+ * An example usage is like so:</p>
+ *
+ * <pre>
+ * &lt;android.support.design.widget.TabLayout
+ *         android:layout_height=&quot;wrap_content&quot;
+ *         android:layout_width=&quot;match_parent&quot;&gt;
+ *
+ *     &lt;android.support.design.widget.TabItem
+ *             android:text=&quot;@string/tab_text&quot;/&gt;
+ *
+ *     &lt;android.support.design.widget.TabItem
+ *             android:icon=&quot;@drawable/ic_android&quot;/&gt;
+ *
+ * &lt;/android.support.design.widget.TabLayout&gt;
+ * </pre>
+ *
+ * <h3>ViewPager integration</h3>
  * <p>
  * If you're using a {@link android.support.v4.view.ViewPager} together
- * with this layout, you can use {@link #setupWithViewPager(ViewPager)} to link the two together.
+ * with this layout, you can call {@link #setupWithViewPager(ViewPager)} to link the two together.
  * This layout will be automatically populated from the {@link PagerAdapter}'s page titles.</p>
  *
+ * <p>
+ * This view also supports being used as part of a ViewPager's decor, and can be added
+ * directly to the ViewPager in a layout resource file like so:</p>
+ *
+ * <pre>
+ * &lt;android.support.v4.view.ViewPager
+ *     android:layout_width=&quot;match_parent&quot;
+ *     android:layout_height=&quot;match_parent&quot;&gt;
+ *
+ *     &lt;android.support.design.widget.TabLayout
+ *         android:layout_width=&quot;match_parent&quot;
+ *         android:layout_height=&quot;wrap_content&quot;
+ *         android:layout_gravity=&quot;top&quot; /&gt;
+ *
+ * &lt;/android.support.v4.view.ViewPager&gt;
+ * </pre>
+ *
  * @see <a href="http://www.google.com/design/spec/components/tabs.html">Tabs</a>
+ *
+ * @attr ref android.support.design.R.styleable#TabLayout_tabPadding
+ * @attr ref android.support.design.R.styleable#TabLayout_tabPaddingStart
+ * @attr ref android.support.design.R.styleable#TabLayout_tabPaddingTop
+ * @attr ref android.support.design.R.styleable#TabLayout_tabPaddingEnd
+ * @attr ref android.support.design.R.styleable#TabLayout_tabPaddingBottom
+ * @attr ref android.support.design.R.styleable#TabLayout_tabContentStart
+ * @attr ref android.support.design.R.styleable#TabLayout_tabBackground
+ * @attr ref android.support.design.R.styleable#TabLayout_tabMinWidth
+ * @attr ref android.support.design.R.styleable#TabLayout_tabMaxWidth
+ * @attr ref android.support.design.R.styleable#TabLayout_tabTextAppearance
  */
+@ViewPager.DecorView
 public class TabLayout extends HorizontalScrollView {
 
     private static final int DEFAULT_HEIGHT_WITH_TEXT_ICON = 72; // dps
@@ -212,8 +261,9 @@ public class TabLayout extends HorizontalScrollView {
     private int mTabGravity;
     private int mMode;
 
-    private OnTabSelectedListener mOnTabSelectedListener;
-    private View.OnClickListener mTabClickListener;
+    private OnTabSelectedListener mSelectedListener;
+    private final ArrayList<OnTabSelectedListener> mSelectedListeners = new ArrayList<>();
+    private OnTabSelectedListener mCurrentVpSelectedListener;
 
     private ValueAnimatorCompat mScrollAnimator;
 
@@ -221,6 +271,8 @@ public class TabLayout extends HorizontalScrollView {
     private PagerAdapter mPagerAdapter;
     private DataSetObserver mPagerAdapterObserver;
     private TabLayoutOnPageChangeListener mPageChangeListener;
+    private AdapterChangeListener mAdapterChangeListener;
+    private boolean mSetupViewPagerImplicitly;
 
     // Pool we use as a simple RecyclerBin
     private final Pools.Pool<TabView> mTabViewPool = new Pools.SimplePool<>(12);
@@ -243,7 +295,8 @@ public class TabLayout extends HorizontalScrollView {
 
         // Add the TabStrip
         mTabStrip = new SlidingTabStrip(context);
-        addView(mTabStrip, LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT);
+        super.addView(mTabStrip, 0, new HorizontalScrollView.LayoutParams(
+                LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
 
         TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.TabLayout,
                 defStyleAttr, R.style.Widget_Design_TabLayout);
@@ -268,10 +321,12 @@ public class TabLayout extends HorizontalScrollView {
 
         // Text colors/sizes come from the text appearance first
         final TypedArray ta = context.obtainStyledAttributes(mTabTextAppearance,
-                R.styleable.TextAppearance);
+                android.support.v7.appcompat.R.styleable.TextAppearance);
         try {
-            mTabTextSize = ta.getDimensionPixelSize(R.styleable.TextAppearance_android_textSize, 0);
-            mTabTextColors = ta.getColorStateList(R.styleable.TextAppearance_android_textColor);
+            mTabTextSize = ta.getDimensionPixelSize(
+                    android.support.v7.appcompat.R.styleable.TextAppearance_android_textSize, 0);
+            mTabTextColors = ta.getColorStateList(
+                    android.support.v7.appcompat.R.styleable.TextAppearance_android_textColor);
         } finally {
             ta.recycle();
         }
@@ -312,6 +367,8 @@ public class TabLayout extends HorizontalScrollView {
      * Sets the tab indicator's color for the currently selected tab.
      *
      * @param color color to use for the indicator
+     *
+     * @attr ref android.support.design.R.styleable#TabLayout_tabIndicatorColor
      */
     public void setSelectedTabIndicatorColor(@ColorInt int color) {
         mTabStrip.setSelectedIndicatorColor(color);
@@ -321,6 +378,8 @@ public class TabLayout extends HorizontalScrollView {
      * Sets the tab indicator's height for the currently selected tab.
      *
      * @param height height to use for the indicator in pixels
+     *
+     * @attr ref android.support.design.R.styleable#TabLayout_tabIndicatorHeight
      */
     public void setSelectedTabIndicatorHeight(int height) {
         mTabStrip.setSelectedIndicatorHeight(height);
@@ -426,14 +485,65 @@ public class TabLayout extends HorizontalScrollView {
         }
     }
 
+    private void addTabFromItemView(@NonNull TabItem item) {
+        final Tab tab = newTab();
+        if (item.mText != null) {
+            tab.setText(item.mText);
+        }
+        if (item.mIcon != null) {
+            tab.setIcon(item.mIcon);
+        }
+        if (item.mCustomLayout != 0) {
+            tab.setCustomView(item.mCustomLayout);
+        }
+        if (!TextUtils.isEmpty(item.getContentDescription())) {
+            tab.setContentDescription(item.getContentDescription());
+        }
+        addTab(tab);
+    }
+
     /**
-     * Set the {@link android.support.design.widget.TabLayout.OnTabSelectedListener} that will
-     * handle switching to and from tabs.
-     *
-     * @param onTabSelectedListener Listener to handle tab selection events
+     * @deprecated Use {@link #addOnTabSelectedListener(OnTabSelectedListener)} and
+     * {@link #removeOnTabSelectedListener(OnTabSelectedListener)}.
      */
-    public void setOnTabSelectedListener(OnTabSelectedListener onTabSelectedListener) {
-        mOnTabSelectedListener = onTabSelectedListener;
+    @Deprecated
+    public void setOnTabSelectedListener(@Nullable OnTabSelectedListener listener) {
+        // The logic in this method emulates what we had before support for multiple
+        // registered listeners.
+        if (mSelectedListener != null) {
+            removeOnTabSelectedListener(mSelectedListener);
+        }
+        // Update the deprecated field so that we can remove the passed listener the next
+        // time we're called
+        mSelectedListener = listener;
+        if (listener != null) {
+            addOnTabSelectedListener(listener);
+        }
+    }
+
+    /**
+     * Add a {@link TabLayout.OnTabSelectedListener} that will be invoked when tab selection
+     * changes.
+     *
+     * <p>Components that add a listener should take care to remove it when finished via
+     * {@link #removeOnTabSelectedListener(OnTabSelectedListener)}.</p>
+     *
+     * @param listener listener to add
+     */
+    public void addOnTabSelectedListener(@NonNull OnTabSelectedListener listener) {
+        if (!mSelectedListeners.contains(listener)) {
+            mSelectedListeners.add(listener);
+        }
+    }
+
+    /**
+     * Remove the given {@link TabLayout.OnTabSelectedListener} that was previously added via
+     * {@link #addOnTabSelectedListener(OnTabSelectedListener)}.
+     *
+     * @param listener listener to remove
+     */
+    public void removeOnTabSelectedListener(@NonNull OnTabSelectedListener listener) {
+        mSelectedListeners.remove(listener);
     }
 
     /**
@@ -445,8 +555,13 @@ public class TabLayout extends HorizontalScrollView {
      */
     @NonNull
     public Tab newTab() {
-        final Tab poolTab = sTabPool.acquire();
-        return poolTab != null ? poolTab : new Tab(this);
+        Tab tab = sTabPool.acquire();
+        if (tab == null) {
+            tab = new Tab();
+        }
+        tab.mParent = this;
+        tab.mView = createTabView(tab);
+        return tab;
     }
 
     /**
@@ -546,6 +661,8 @@ public class TabLayout extends HorizontalScrollView {
      * </ul>
      *
      * @param mode one of {@link #MODE_FIXED} or {@link #MODE_SCROLLABLE}.
+     *
+     * @attr ref android.support.design.R.styleable#TabLayout_tabMode
      */
     public void setTabMode(@Mode int mode) {
         if (mode != mMode) {
@@ -568,6 +685,8 @@ public class TabLayout extends HorizontalScrollView {
      * Set the gravity to use when laying out the tabs.
      *
      * @param gravity one of {@link #GRAVITY_CENTER} or {@link #GRAVITY_FILL}.
+     *
+     * @attr ref android.support.design.R.styleable#TabLayout_tabGravity
      */
     public void setTabGravity(@TabGravity int gravity) {
         if (mTabGravity != gravity) {
@@ -588,6 +707,8 @@ public class TabLayout extends HorizontalScrollView {
 
     /**
      * Sets the text colors for the different states (normal, selected) used for the tabs.
+     *
+     * @see #getTabTextColors()
      */
     public void setTabTextColors(@Nullable ColorStateList textColor) {
         if (mTabTextColors != textColor) {
@@ -606,6 +727,9 @@ public class TabLayout extends HorizontalScrollView {
 
     /**
      * Sets the text colors for the different states (normal, selected) used for the tabs.
+     *
+     * @attr ref android.support.design.R.styleable#TabLayout_tabTextColor
+     * @attr ref android.support.design.R.styleable#TabLayout_tabSelectedTextColor
      */
     public void setTabTextColors(int normalColor, int selectedColor) {
         setTabTextColors(createColorStateList(normalColor, selectedColor));
@@ -614,31 +738,56 @@ public class TabLayout extends HorizontalScrollView {
     /**
      * The one-stop shop for setting up this {@link TabLayout} with a {@link ViewPager}.
      *
-     * <p>This method will link the given ViewPager and this TabLayout together so that any
-     * changes in one are automatically reflected in the other. This includes adapter changes,
-     * scroll state changes, and clicks. The tabs displayed in this layout will be populated
+     * <p>This is the same as calling {@link #setupWithViewPager(ViewPager, boolean)} with
+     * auto-refresh enabled.</p>
+     *
+     * @param viewPager the ViewPager to link to, or {@code null} to clear any previous link
+     */
+    public void setupWithViewPager(@Nullable ViewPager viewPager) {
+        setupWithViewPager(viewPager, true);
+    }
+
+    /**
+     * The one-stop shop for setting up this {@link TabLayout} with a {@link ViewPager}.
+     *
+     * <p>This method will link the given ViewPager and this TabLayout together so that
+     * changes in one are automatically reflected in the other. This includes scroll state changes
+     * and clicks. The tabs displayed in this layout will be populated
      * from the ViewPager adapter's page titles.</p>
      *
-     * <p>After this method is called, you will not need this method again unless you want
-     * to change the linked ViewPager.</p>
+     * <p>If {@code autoRefresh} is {@code true}, any changes in the {@link PagerAdapter} will
+     * trigger this layout to re-populate itself from the adapter's titles.</p>
      *
      * <p>If the given ViewPager is non-null, it needs to already have a
      * {@link PagerAdapter} set.</p>
      *
-     * @param viewPager The ViewPager to link, or {@code null} to clear any previous link.
+     * @param viewPager   the ViewPager to link to, or {@code null} to clear any previous link
+     * @param autoRefresh whether this layout should refresh its contents if the given ViewPager's
+     *                    content changes
      */
-    public void setupWithViewPager(@Nullable final ViewPager viewPager) {
-        if (mViewPager != null && mPageChangeListener != null) {
+    public void setupWithViewPager(@Nullable final ViewPager viewPager, boolean autoRefresh) {
+        setupWithViewPager(viewPager, autoRefresh, false);
+    }
+
+    private void setupWithViewPager(@Nullable final ViewPager viewPager, boolean autoRefresh,
+            boolean implicitSetup) {
+        if (mViewPager != null) {
             // If we've already been setup with a ViewPager, remove us from it
-            mViewPager.removeOnPageChangeListener(mPageChangeListener);
+            if (mPageChangeListener != null) {
+                mViewPager.removeOnPageChangeListener(mPageChangeListener);
+            }
+            if (mAdapterChangeListener != null) {
+                mViewPager.removeOnAdapterChangeListener(mAdapterChangeListener);
+            }
+        }
+
+        if (mCurrentVpSelectedListener != null) {
+            // If we already have a tab selected listener for the ViewPager, remove it
+            removeOnTabSelectedListener(mCurrentVpSelectedListener);
+            mCurrentVpSelectedListener = null;
         }
 
         if (viewPager != null) {
-            final PagerAdapter adapter = viewPager.getAdapter();
-            if (adapter == null) {
-                throw new IllegalArgumentException("ViewPager does not have a PagerAdapter set");
-            }
-
             mViewPager = viewPager;
 
             // Add our custom OnPageChangeListener to the ViewPager
@@ -649,17 +798,33 @@ public class TabLayout extends HorizontalScrollView {
             viewPager.addOnPageChangeListener(mPageChangeListener);
 
             // Now we'll add a tab selected listener to set ViewPager's current item
-            setOnTabSelectedListener(new ViewPagerOnTabSelectedListener(viewPager));
+            mCurrentVpSelectedListener = new ViewPagerOnTabSelectedListener(viewPager);
+            addOnTabSelectedListener(mCurrentVpSelectedListener);
 
-            // Now we'll populate ourselves from the pager adapter
-            setPagerAdapter(adapter, true);
+            final PagerAdapter adapter = viewPager.getAdapter();
+            if (adapter != null) {
+                // Now we'll populate ourselves from the pager adapter, adding an observer if
+                // autoRefresh is enabled
+                setPagerAdapter(adapter, autoRefresh);
+            }
+
+            // Add a listener so that we're notified of any adapter changes
+            if (mAdapterChangeListener == null) {
+                mAdapterChangeListener = new AdapterChangeListener();
+            }
+            mAdapterChangeListener.setAutoRefresh(autoRefresh);
+            viewPager.addOnAdapterChangeListener(mAdapterChangeListener);
+
+            // Now update the scroll position to match the ViewPager's current item
+            setScrollPosition(viewPager.getCurrentItem(), 0f, true);
         } else {
             // We've been given a null ViewPager so we need to clear out the internal state,
             // listeners and observers
             mViewPager = null;
-            setOnTabSelectedListener(null);
-            setPagerAdapter(null, true);
+            setPagerAdapter(null, false);
         }
+
+        mSetupViewPagerImplicitly = implicitSetup;
     }
 
     /**
@@ -670,6 +835,44 @@ public class TabLayout extends HorizontalScrollView {
     @Deprecated
     public void setTabsFromPagerAdapter(@Nullable final PagerAdapter adapter) {
         setPagerAdapter(adapter, false);
+    }
+
+    @Override
+    public boolean shouldDelayChildPressedState() {
+        // Only delay the pressed state if the tabs can scroll
+        return getTabScrollRange() > 0;
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+
+        if (mViewPager == null) {
+            // If we don't have a ViewPager already, check if our parent is a ViewPager to
+            // setup with it automatically
+            final ViewParent vp = getParent();
+            if (vp instanceof ViewPager) {
+                // If we have a ViewPager parent and we've been added as part of its decor, let's
+                // assume that we should automatically setup to display any titles
+                setupWithViewPager((ViewPager) vp, true, true);
+            }
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+
+        if (mSetupViewPagerImplicitly) {
+            // If we've been setup with a ViewPager implicitly, let's clear out any listeners, etc
+            setupWithViewPager(null);
+            mSetupViewPagerImplicitly = false;
+        }
+    }
+
+    private int getTabScrollRange() {
+        return Math.max(0, mTabStrip.getWidth() - getWidth() - getPaddingLeft()
+                - getPaddingRight());
     }
 
     private void setPagerAdapter(@Nullable final PagerAdapter adapter, final boolean addObserver) {
@@ -708,14 +911,12 @@ public class TabLayout extends HorizontalScrollView {
                     selectTab(getTabAt(curItem));
                 }
             }
-        } else {
-            removeAllTabs();
         }
     }
 
     private void updateAllTabs() {
-        for (int i = 0, z = mTabStrip.getChildCount(); i < z; i++) {
-            updateTab(i);
+        for (int i = 0, z = mTabs.size(); i < z; i++) {
+            mTabs.get(i).updateView();
         }
     }
 
@@ -727,17 +928,6 @@ public class TabLayout extends HorizontalScrollView {
         tabView.setTab(tab);
         tabView.setFocusable(true);
         tabView.setMinimumWidth(getTabMinWidth());
-
-        if (mTabClickListener == null) {
-            mTabClickListener = new View.OnClickListener() {
-                @Override
-                public void onClick(View view) {
-                    TabView tabView = (TabView) view;
-                    tabView.getTab().select();
-                }
-            };
-        }
-        tabView.setOnClickListener(mTabClickListener);
         return tabView;
     }
 
@@ -751,19 +941,8 @@ public class TabLayout extends HorizontalScrollView {
         }
     }
 
-    private void updateTab(int position) {
-        final TabView view = getTabView(position);
-        if (view != null) {
-            view.update();
-        }
-    }
-
-    private TabView getTabView(int position) {
-        return (TabView) mTabStrip.getChildAt(position);
-    }
-
     private void addTabView(Tab tab, boolean setSelected) {
-        final TabView tabView = createTabView(tab);
+        final TabView tabView = tab.mView;
         mTabStrip.addView(tabView, createLayoutParamsForTabs());
         if (setSelected) {
             tabView.setSelected(true);
@@ -771,10 +950,38 @@ public class TabLayout extends HorizontalScrollView {
     }
 
     private void addTabView(Tab tab, int position, boolean setSelected) {
-        final TabView tabView = createTabView(tab);
+        final TabView tabView = tab.mView;
         mTabStrip.addView(tabView, position, createLayoutParamsForTabs());
         if (setSelected) {
             tabView.setSelected(true);
+        }
+    }
+
+    @Override
+    public void addView(View child) {
+        addViewInternal(child);
+    }
+
+    @Override
+    public void addView(View child, int index) {
+        addViewInternal(child);
+    }
+
+    @Override
+    public void addView(View child, ViewGroup.LayoutParams params) {
+        addViewInternal(child);
+    }
+
+    @Override
+    public void addView(View child, int index, ViewGroup.LayoutParams params) {
+        addViewInternal(child);
+    }
+
+    private void addViewInternal(final View child) {
+        if (child instanceof TabItem) {
+            addTabFromItemView((TabItem) child);
+        } else {
+            throw new IllegalArgumentException("Only TabItem instances can be added to TabLayout");
         }
     }
 
@@ -917,12 +1124,12 @@ public class TabLayout extends HorizontalScrollView {
         selectTab(tab, true);
     }
 
-    void selectTab(Tab tab, boolean updateIndicator) {
-        if (mSelectedTab == tab) {
-            if (mSelectedTab != null) {
-                if (mOnTabSelectedListener != null) {
-                    mOnTabSelectedListener.onTabReselected(mSelectedTab);
-                }
+    void selectTab(final Tab tab, boolean updateIndicator) {
+        final Tab currentTab = mSelectedTab;
+
+        if (currentTab == tab) {
+            if (currentTab != null) {
+                dispatchTabReselected(tab);
                 animateToTab(tab.getPosition());
             }
         } else {
@@ -931,7 +1138,7 @@ public class TabLayout extends HorizontalScrollView {
                 if (newPosition != Tab.INVALID_POSITION) {
                     setSelectedTabView(newPosition);
                 }
-                if ((mSelectedTab == null || mSelectedTab.getPosition() == Tab.INVALID_POSITION)
+                if ((currentTab == null || currentTab.getPosition() == Tab.INVALID_POSITION)
                         && newPosition != Tab.INVALID_POSITION) {
                     // If we don't currently have a tab, just draw the indicator
                     setScrollPosition(newPosition, 0f, true);
@@ -939,13 +1146,27 @@ public class TabLayout extends HorizontalScrollView {
                     animateToTab(newPosition);
                 }
             }
-            if (mSelectedTab != null && mOnTabSelectedListener != null) {
-                mOnTabSelectedListener.onTabUnselected(mSelectedTab);
-            }
+            dispatchTabUnselected(currentTab);
             mSelectedTab = tab;
-            if (mSelectedTab != null && mOnTabSelectedListener != null) {
-                mOnTabSelectedListener.onTabSelected(mSelectedTab);
-            }
+            dispatchTabSelected(tab);
+        }
+    }
+
+    private void dispatchTabSelected(@NonNull final Tab tab) {
+        for (int i = mSelectedListeners.size() - 1; i >= 0; i--) {
+            mSelectedListeners.get(i).onTabSelected(tab);
+        }
+    }
+
+    private void dispatchTabUnselected(@NonNull final Tab tab) {
+        for (int i = mSelectedListeners.size() - 1; i >= 0; i--) {
+            mSelectedListeners.get(i).onTabUnselected(tab);
+        }
+    }
+
+    private void dispatchTabReselected(@NonNull final Tab tab) {
+        for (int i = mSelectedListeners.size() - 1; i >= 0; i--) {
+            mSelectedListeners.get(i).onTabReselected(tab);
         }
     }
 
@@ -1016,10 +1237,11 @@ public class TabLayout extends HorizontalScrollView {
         private int mPosition = INVALID_POSITION;
         private View mCustomView;
 
-        private final TabLayout mParent;
+        private TabLayout mParent;
+        private TabView mView;
 
-        Tab(TabLayout parent) {
-            mParent = parent;
+        private Tab() {
+            // Private constructor
         }
 
         /**
@@ -1070,9 +1292,11 @@ public class TabLayout extends HorizontalScrollView {
         @NonNull
         public Tab setCustomView(@Nullable View view) {
             mCustomView = view;
-            if (mPosition >= 0) {
-                mParent.updateTab(mPosition);
-            }
+            updateView();
+
+            final boolean isSelected = (mParent.getSelectedTabPosition() == getPosition());
+            mCustomView.setSelected(isSelected);
+
             return this;
         }
 
@@ -1091,9 +1315,8 @@ public class TabLayout extends HorizontalScrollView {
          */
         @NonNull
         public Tab setCustomView(@LayoutRes int resId) {
-            final TabView tabView = mParent.getTabView(mPosition);
-            final LayoutInflater inflater = LayoutInflater.from(tabView.getContext());
-            return setCustomView(inflater.inflate(resId, tabView, false));
+            final LayoutInflater inflater = LayoutInflater.from(mView.getContext());
+            return setCustomView(inflater.inflate(resId, mView, false));
         }
 
         /**
@@ -1139,9 +1362,7 @@ public class TabLayout extends HorizontalScrollView {
         @NonNull
         public Tab setIcon(@Nullable Drawable icon) {
             mIcon = icon;
-            if (mPosition >= 0) {
-                mParent.updateTab(mPosition);
-            }
+            updateView();
             return this;
         }
 
@@ -1153,6 +1374,9 @@ public class TabLayout extends HorizontalScrollView {
          */
         @NonNull
         public Tab setIcon(@DrawableRes int resId) {
+            if (mParent == null) {
+                throw new IllegalArgumentException("Tab not attached to a TabLayout");
+            }
             return setIcon(AppCompatDrawableManager.get().getDrawable(mParent.getContext(), resId));
         }
 
@@ -1166,9 +1390,7 @@ public class TabLayout extends HorizontalScrollView {
         @NonNull
         public Tab setText(@Nullable CharSequence text) {
             mText = text;
-            if (mPosition >= 0) {
-                mParent.updateTab(mPosition);
-            }
+            updateView();
             return this;
         }
 
@@ -1181,6 +1403,9 @@ public class TabLayout extends HorizontalScrollView {
          */
         @NonNull
         public Tab setText(@StringRes int resId) {
+            if (mParent == null) {
+                throw new IllegalArgumentException("Tab not attached to a TabLayout");
+            }
             return setText(mParent.getResources().getText(resId));
         }
 
@@ -1188,6 +1413,9 @@ public class TabLayout extends HorizontalScrollView {
          * Select this tab. Only valid if the tab has been added to the action bar.
          */
         public void select() {
+            if (mParent == null) {
+                throw new IllegalArgumentException("Tab not attached to a TabLayout");
+            }
             mParent.selectTab(this);
         }
 
@@ -1195,6 +1423,9 @@ public class TabLayout extends HorizontalScrollView {
          * Returns true if this tab is currently selected.
          */
         public boolean isSelected() {
+            if (mParent == null) {
+                throw new IllegalArgumentException("Tab not attached to a TabLayout");
+            }
             return mParent.getSelectedTabPosition() == mPosition;
         }
 
@@ -1209,6 +1440,9 @@ public class TabLayout extends HorizontalScrollView {
          */
         @NonNull
         public Tab setContentDescription(@StringRes int resId) {
+            if (mParent == null) {
+                throw new IllegalArgumentException("Tab not attached to a TabLayout");
+            }
             return setContentDescription(mParent.getResources().getText(resId));
         }
 
@@ -1224,9 +1458,7 @@ public class TabLayout extends HorizontalScrollView {
         @NonNull
         public Tab setContentDescription(@Nullable CharSequence contentDesc) {
             mContentDesc = contentDesc;
-            if (mPosition >= 0) {
-                mParent.updateTab(mPosition);
-            }
+            updateView();
             return this;
         }
 
@@ -1242,7 +1474,15 @@ public class TabLayout extends HorizontalScrollView {
             return mContentDesc;
         }
 
+        private void updateView() {
+            if (mView != null) {
+                mView.update();
+            }
+        }
+
         private void reset() {
+            mParent = null;
+            mView = null;
             mTag = null;
             mIcon = null;
             mText = null;
@@ -1273,6 +1513,19 @@ public class TabLayout extends HorizontalScrollView {
                     mTabPaddingEnd, mTabPaddingBottom);
             setGravity(Gravity.CENTER);
             setOrientation(VERTICAL);
+            setClickable(true);
+        }
+
+        @Override
+        public boolean performClick() {
+            final boolean value = super.performClick();
+
+            if (mTab != null) {
+                mTab.select();
+                return true;
+            } else {
+                return value;
+            }
         }
 
         @Override
@@ -1320,7 +1573,7 @@ public class TabLayout extends HorizontalScrollView {
                     || specWidthSize > maxWidth)) {
                 // If we have a max width and a given spec which is either unspecified or
                 // larger than the max width, update the width spec using the same mode
-                widthMeasureSpec = MeasureSpec.makeMeasureSpec(mTabMaxWidth, specWidthMode);
+                widthMeasureSpec = MeasureSpec.makeMeasureSpec(mTabMaxWidth, MeasureSpec.AT_MOST);
             } else {
                 // Else, use the original width spec
                 widthMeasureSpec = origWidthMeasureSpec;
@@ -1355,10 +1608,11 @@ public class TabLayout extends HorizontalScrollView {
                         // If we're in fixed mode, going up in text size and currently have 1 line
                         // then it's very easy to get into an infinite recursion.
                         // To combat that we check to see if the change in text size
-                        // will cause a line count change. If so, abort the size change.
+                        // will cause a line count change. If so, abort the size change and stick
+                        // to the smaller size.
                         final Layout layout = mTextView.getLayout();
-                        if (layout == null
-                                || approximateLineWidth(layout, 0, textSize) > layout.getWidth()) {
+                        if (layout == null || approximateLineWidth(layout, 0, textSize)
+                                > getMeasuredWidth() - getPaddingLeft() - getPaddingRight()) {
                             updateTextView = false;
                         }
                     }
@@ -1500,21 +1754,32 @@ public class TabLayout extends HorizontalScrollView {
         }
 
         @Override
-        public boolean onLongClick(View v) {
+        public boolean onLongClick(final View v) {
             final int[] screenPos = new int[2];
+            final Rect displayFrame = new Rect();
             getLocationOnScreen(screenPos);
+            getWindowVisibleDisplayFrame(displayFrame);
 
             final Context context = getContext();
             final int width = getWidth();
             final int height = getHeight();
-            final int screenWidth = context.getResources().getDisplayMetrics().widthPixels;
+            final int midy = screenPos[1] + height / 2;
+            int referenceX = screenPos[0] + width / 2;
+            if (ViewCompat.getLayoutDirection(v) == ViewCompat.LAYOUT_DIRECTION_LTR) {
+                final int screenWidth = context.getResources().getDisplayMetrics().widthPixels;
+                referenceX = screenWidth - referenceX; // mirror
+            }
 
             Toast cheatSheet = Toast.makeText(context, mTab.getContentDescription(),
                     Toast.LENGTH_SHORT);
-            // Show under the tab
-            cheatSheet.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL,
-                    (screenPos[0] + width / 2) - screenWidth / 2, height);
-
+            if (midy < displayFrame.height()) {
+                // Show below the tab view
+                cheatSheet.setGravity(Gravity.TOP | GravityCompat.END, referenceX,
+                        screenPos[1] + height - displayFrame.top);
+            } else {
+                // Show along the bottom center
+                cheatSheet.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, 0, height);
+            }
             cheatSheet.show();
             return true;
         }
@@ -1702,6 +1967,12 @@ public class TabLayout extends HorizontalScrollView {
                     == ViewCompat.LAYOUT_DIRECTION_RTL;
 
             final View targetView = getChildAt(position);
+            if (targetView == null) {
+                // If we don't have a view, just update the position now and return
+                updateIndicatorPosition();
+                return;
+            }
+
             final int targetLeft = targetView.getLeft();
             final int targetRight = targetView.getRight();
             final int startLeft;
@@ -1806,6 +2077,15 @@ public class TabLayout extends HorizontalScrollView {
         return mMode == MODE_SCROLLABLE ? mScrollableTabMinWidth : 0;
     }
 
+    @Override
+    public LayoutParams generateLayoutParams(AttributeSet attrs) {
+        // We don't care about the layout params of any views added to us, since we don't actually
+        // add them. The only view we add is the SlidingTabStrip, which is done manually.
+        // We return the default layout params so that we don't blow up if we're given a TabItem
+        // without android:layout_* values.
+        return generateDefaultLayoutParams();
+    }
+
     private int getTabMaxWidth() {
         return mTabMaxWidth;
     }
@@ -1830,14 +2110,14 @@ public class TabLayout extends HorizontalScrollView {
         }
 
         @Override
-        public void onPageScrollStateChanged(int state) {
+        public void onPageScrollStateChanged(final int state) {
             mPreviousScrollState = mScrollState;
             mScrollState = state;
         }
 
         @Override
-        public void onPageScrolled(int position, float positionOffset,
-                int positionOffsetPixels) {
+        public void onPageScrolled(final int position, final float positionOffset,
+                final int positionOffsetPixels) {
             final TabLayout tabLayout = mTabLayoutRef.get();
             if (tabLayout != null) {
                 // Only update the text selection if we're not settling, or we are settling after
@@ -1854,9 +2134,10 @@ public class TabLayout extends HorizontalScrollView {
         }
 
         @Override
-        public void onPageSelected(int position) {
+        public void onPageSelected(final int position) {
             final TabLayout tabLayout = mTabLayoutRef.get();
-            if (tabLayout != null && tabLayout.getSelectedTabPosition() != position) {
+            if (tabLayout != null && tabLayout.getSelectedTabPosition() != position
+                    && position < tabLayout.getTabCount()) {
                 // Select the tab, only updating the indicator if we're not being dragged/settled
                 // (since onPageScrolled will handle that).
                 final boolean updateIndicator = mScrollState == SCROLL_STATE_IDLE
@@ -1910,4 +2191,19 @@ public class TabLayout extends HorizontalScrollView {
         }
     }
 
+    private class AdapterChangeListener implements ViewPager.OnAdapterChangeListener {
+        private boolean mAutoRefresh;
+
+        @Override
+        public void onAdapterChanged(@NonNull ViewPager viewPager,
+                @Nullable PagerAdapter oldAdapter, @Nullable PagerAdapter newAdapter) {
+            if (mViewPager == viewPager) {
+                setPagerAdapter(newAdapter, mAutoRefresh);
+            }
+        }
+
+        void setAutoRefresh(boolean autoRefresh) {
+            mAutoRefresh = autoRefresh;
+        }
+    }
 }

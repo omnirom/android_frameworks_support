@@ -26,6 +26,7 @@ import org.junit.runners.JUnit4;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.util.Pair;
+import android.test.suitebuilder.annotation.SmallTest;
 import android.view.View;
 
 import java.util.ArrayList;
@@ -42,6 +43,7 @@ import android.support.v7.widget.RecyclerView.ViewHolder;
 
 @SuppressWarnings("ConstantConditions")
 @RunWith(JUnit4.class)
+@SmallTest
 public class ViewInfoStoreTest extends TestCase {
     ViewInfoStore mStore;
     LoggingProcessCallback mCallback;
@@ -49,6 +51,37 @@ public class ViewInfoStoreTest extends TestCase {
     public void prepare() {
         mStore = new ViewInfoStore();
         mCallback = new LoggingProcessCallback();
+    }
+
+    @Test
+    public void addOverridePre() {
+        RecyclerView.ViewHolder vh = new MockViewHolder();
+        MockInfo info = new MockInfo();
+        mStore.addToPreLayout(vh, info);
+        MockInfo info2 = new MockInfo();
+        mStore.addToPreLayout(vh, info2);
+        assertSame(info2, find(vh, FLAG_PRE));
+    }
+
+    @Test
+    public void addOverridePost() {
+        RecyclerView.ViewHolder vh = new MockViewHolder();
+        MockInfo info = new MockInfo();
+        mStore.addToPostLayout(vh, info);
+        MockInfo info2 = new MockInfo();
+        mStore.addToPostLayout(vh, info2);
+        assertSame(info2, find(vh, FLAG_POST));
+    }
+
+    @Test
+    public void addRemoveAndReAdd() {
+        RecyclerView.ViewHolder vh = new MockViewHolder();
+        MockInfo pre = new MockInfo();
+        mStore.addToPreLayout(vh, pre);
+        MockInfo post1 = new MockInfo();
+        mStore.addToPostLayout(vh, post1);
+        mStore.onViewDetached(vh);
+        mStore.addToDisappearedInLayout(vh);
     }
 
     @Test
@@ -186,6 +219,19 @@ public class ViewInfoStoreTest extends TestCase {
         assertTrue(mCallback.appeared.isEmpty());
         assertTrue(mCallback.unused.isEmpty());
         assertEquals(mCallback.persistent.get(vh), new Pair<>(pre, post));
+    }
+
+    @Test
+    public void processAppearAndDisappearInPostLayout() {
+        ViewHolder vh = new MockViewHolder();
+        MockInfo info1 = new MockInfo();
+        mStore.addToPostLayout(vh, info1);
+        mStore.addToDisappearedInLayout(vh);
+        mStore.process(mCallback);
+        assertTrue(mCallback.disappeared.isEmpty());
+        assertTrue(mCallback.appeared.isEmpty());
+        assertTrue(mCallback.persistent.isEmpty());
+        assertSame(mCallback.unused.get(0), vh);
     }
 
     static class MockViewHolder extends RecyclerView.ViewHolder {

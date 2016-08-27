@@ -32,6 +32,11 @@
 
         <item name="baseCardViewStyle">@style/Widget.Leanback.BaseCardViewStyle</item>
         <item name="imageCardViewStyle">@style/Widget.Leanback.ImageCardViewStyle</item>
+        <item name="imageCardViewImageStyle">@style/Widget.Leanback.ImageCardView.ImageStyle</item>
+        <item name="imageCardViewTitleStyle">@style/Widget.Leanback.ImageCardView.TitleStyle</item>
+        <item name="imageCardViewContentStyle">@style/Widget.Leanback.ImageCardView.ContentStyle</item>
+        <item name="imageCardViewBadgeStyle">@style/Widget.Leanback.ImageCardView.BadgeStyle</item>
+        <item name="imageCardViewInfoAreaStyle">@style/Widget.Leanback.ImageCardView.InfoAreaStyle</item>
 
         <item name="browsePaddingStart">@dimen/lb_browse_padding_start</item>
         <item name="browsePaddingEnd">@dimen/lb_browse_padding_end</item>
@@ -43,11 +48,13 @@
 
         <item name="headersVerticalGridStyle">@style/Widget.Leanback.Headers.VerticalGridView</item>
         <item name="headerStyle">@style/Widget.Leanback.Header</item>
+        <item name="sectionHeaderStyle">@style/Widget.Leanback.Header.Section</item>
 
         <item name="rowsVerticalGridStyle">@style/Widget.Leanback.Rows.VerticalGridView</item>
         <item name="rowHorizontalGridStyle">@style/Widget.Leanback.Row.HorizontalGridView</item>
         <item name="itemsVerticalGridStyle">@style/Widget.Leanback.GridItems.VerticalGridView</item>
 
+        <item name="browseTitleViewLayout">@layout/lb_browse_title</item>
         <item name="browseTitleTextStyle">@style/Widget.Leanback.Title.Text</item>
         <item name="browseTitleIconStyle">@style/Widget.Leanback.Title.Icon</item>
         <item name="browseTitleViewStyle">@style/Widget.Leanback.TitleView</item>
@@ -59,21 +66,39 @@
 
         <item name="searchOrbViewStyle">@style/Widget.Leanback.SearchOrbViewStyle</item>
 
+
         <item name="detailsDescriptionTitleStyle">@style/Widget.Leanback.DetailsDescriptionTitleStyle</item>
         <item name="detailsDescriptionSubtitleStyle">@style/Widget.Leanback.DetailsDescriptionSubtitleStyle</item>
         <item name="detailsDescriptionBodyStyle">@style/Widget.Leanback.DetailsDescriptionBodyStyle</item>
         <item name="detailsActionButtonStyle">@style/Widget.Leanback.DetailsActionButtonStyle</item>
+        <!-- Attributes used for styling of a playback -->
+        <item name="playbackPaddingStart">@dimen/lb_playback_controls_margin_start</item>
+        <item name="playbackPaddingEnd">@dimen/lb_playback_controls_margin_end</item>
+        <item name="playbackMediaItemPaddingStart">@dimen/lb_playback_media_row_horizontal_padding</item>
+
+        <item name="playbackMediaListHeaderStyle">@style/Widget.Leanback.PlaybackMediaListHeaderStyle</item>
+        <item name="playbackMediaItemRowStyle">@style/Widget.Leanback.PlaybackMediaItemRowStyle</item>
+        <item name="playbackMediaItemSeparatorStyle">@style/Widget.Leanback.PlaybackMediaItemSeparatorStyle</item>
+        <item name="playbackMediaListHeaderTitleStyle">@style/Widget.Leanback.PlaybackMediaListHeaderTitleStyle</item>
+        <item name="playbackMediaItemDetailsStyle">@style/Widget.Leanback.PlaybackMediaItemDetailsStyle</item>
+        <item name="playbackMediaItemNumberStyle">@style/Widget.Leanback.PlaybackMediaItemNumberStyle</item>
+        <item name="playbackMediaItemNameStyle">@style/Widget.Leanback.PlaybackMediaItemNameStyle</item>
+        <item name="playbackMediaItemDurationStyle">@style/Widget.Leanback.PlaybackMediaItemDurationStyle</item>
+
         <item name="playbackControlsButtonStyle">@style/Widget.Leanback.PlaybackControlsButtonStyle</item>
         <item name="playbackControlButtonLabelStyle">@style/Widget.Leanback.PlaybackControlLabelStyle</item>
         <item name="playbackControlsTimeStyle">@style/Widget.Leanback.PlaybackControlsTimeStyle</item>
         <item name="playbackControlsActionIcons">@style/Widget.Leanback.PlaybackControlsActionIconsStyle</item>
 
+
         <item name="errorMessageStyle">@style/Widget.Leanback.ErrorMessageStyle</item>
 
-        <!-- TODO should be null, and set programatically to avoid dependence on leanback theme -->
-        <item name="defaultSearchColor">@null</item>
-        <item name="defaultSearchBrightColor">@null</item>
-        <item name="defaultSearchIcon">@null</item>
+        <item name="defaultSearchColor">@color/lb_default_search_color</item>
+        <item name="defaultSearchIconColor">@color/lb_default_search_icon_color</item>
+        <item name="defaultSearchBrightColor">?attr/defaultSearchColor</item>
+        <item name="defaultSearchIcon">@drawable/lb_ic_in_app_search</item>
+
+        <item name="defaultSectionHeaderColor">?attr/defaultSearchColor</item>
 
         <!-- android:windowSharedElementEnterTransition is kept for backward compatibility for apps still refer
         to Theme.Leanback, app should use Theme.Leanback.Details instead -->
@@ -116,6 +141,7 @@
 
     <style name="Theme.Leanback.GuidedStep" parent="Theme.LeanbackBase">
         <item name="guidedStepThemeFlag">true</item>
+        <item name="guidedStepHeightWeight">@string/lb_guidedstep_height_weight</item>
 
         <item name="android:windowEnterTransition">@transition/lb_guidedstep_activity_enter</item>
 
@@ -139,10 +165,10 @@
         <item name="guidedActionsElevation">@dimen/lb_guidedactions_elevation</item>
         <item name="guidedActionsBackground">@color/lb_guidedactions_background</item>
         <item name="guidedActionsBackgroundDark">@color/lb_guidedactions_background_dark</item>
-        <item name="guidedActionsSelectorStyle">@style/Widget.Leanback.GuidedActionsSelectorStyle</item>
+        <item name="guidedActionsSelectorDrawable">?android:attr/selectableItemBackground</item>
         <item name="guidedActionsListStyle">@style/Widget.Leanback.GuidedActionsListStyle</item>
-        <item name="guidedActionsSelectorShowAnimation">@animator/lb_guidedactions_selector_show</item>
-        <item name="guidedActionsSelectorHideAnimation">@animator/lb_guidedactions_selector_hide</item>
+        <item name="guidedSubActionsListStyle">@style/Widget.Leanback.GuidedSubActionsListStyle</item>
+        <item name="guidedButtonActionsListStyle">@style/Widget.Leanback.GuidedButtonActionsListStyle</item>
 
         <item name="guidedActionItemContainerStyle">@style/Widget.Leanback.GuidedActionItemContainerStyle</item>
         <item name="guidedActionItemCheckmarkStyle">@style/Widget.Leanback.GuidedActionItemCheckmarkStyle</item>
@@ -162,6 +188,23 @@
         <item name="guidedActionTitleMaxLines">@integer/lb_guidedactions_item_title_max_lines</item>
         <item name="guidedActionDescriptionMinLines">@integer/lb_guidedactions_item_description_min_lines</item>
         <item name="guidedActionVerticalPadding">@dimen/lb_guidedactions_vertical_padding</item>
+        <item name="guidedStepKeyline">@string/lb_guidedstep_keyline</item>
     </style>
 
+    <style name="Theme.Leanback.GuidedStep.Half" parent="Theme.Leanback.GuidedStep">
+      <item name="android:windowEnterTransition">@transition/lb_guidedstep_activity_enter_bottom</item>
+      <item name="guidedStepHeightWeight">@string/lb_guidedstep_height_weight_translucent</item>
+      <item name="android:windowIsTranslucent">true</item>
+      <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
+
+    <style name="Theme.Leanback.Onboarding" parent="Theme.LeanbackBase">
+        <item name="onboardingHeaderStyle">@style/Widget.Leanback.OnboardingHeaderStyle</item>
+        <item name="onboardingTitleStyle">@style/Widget.Leanback.OnboardingTitleStyle</item>
+        <item name="onboardingDescriptionStyle">@style/Widget.Leanback.OnboardingDescriptionStyle</item>
+        <item name="onboardingNavigatorContainerStyle">@style/Widget.Leanback.OnboardingNavigatorContainerStyle</item>
+        <item name="onboardingPageIndicatorStyle">@style/Widget.Leanback.OnboardingPageIndicatorStyle</item>
+        <item name="onboardingStartButtonStyle">@style/Widget.Leanback.OnboardingStartButtonStyle</item>
+        <item name="onboardingLogoStyle">@style/Widget.Leanback.OnboardingLogoStyle</item>
+    </style>
 </resources>

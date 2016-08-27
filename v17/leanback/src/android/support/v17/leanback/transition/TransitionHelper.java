@@ -99,9 +99,13 @@ public final class TransitionHelper {
 
         public Object createFadeTransition(int fadingMode);
 
+        public Object createChangeTransform();
+
         public Object createChangeBounds(boolean reparent);
 
         public Object createFadeAndShortSlide(int edge);
+
+        public Object createFadeAndShortSlide(int edge, float distance);
 
         public void setChangeBoundsStartDelay(Object changeBounds, View view, int startDelay);
 
@@ -145,6 +149,8 @@ public final class TransitionHelper {
         public Object createDefaultInterpolator(Context context);
 
         public Object loadTransition(Context context, int resId);
+
+        public void beginDelayedTransition(ViewGroup sceneRoot, Object transitionObject);
 
         public void setTransitionGroup(ViewGroup viewGroup, boolean transitionGroup);
     }
@@ -233,7 +239,17 @@ public final class TransitionHelper {
         }
 
         @Override
+        public Object createChangeTransform() {
+            return new TransitionStub();
+        }
+
+        @Override
         public Object createFadeAndShortSlide(int edge) {
+            return new TransitionStub();
+        }
+
+        @Override
+        public Object createFadeAndShortSlide(int edge, float distance) {
             return new TransitionStub();
         }
 
@@ -357,6 +373,10 @@ public final class TransitionHelper {
         @Override
         public Object loadTransition(Context context, int resId) {
             return new TransitionStub();
+        }
+
+        @Override
+        public void beginDelayedTransition(ViewGroup sceneRoot, Object transitionObject) {
         }
 
         @Override
@@ -552,6 +572,16 @@ public final class TransitionHelper {
         }
 
         @Override
+        public Object createFadeAndShortSlide(int edge, float distance) {
+            return TransitionHelperApi21.createFadeAndShortSlide(edge, distance);
+        }
+
+        @Override
+        public void beginDelayedTransition(ViewGroup sceneRoot, Object transition) {
+            TransitionHelperApi21.beginDelayedTransition(sceneRoot, transition);
+        }
+
+        @Override
         public Object getEnterTransition(Window window) {
             return TransitionHelperApi21.getEnterTransition(window);
         }
@@ -585,6 +615,12 @@ public final class TransitionHelper {
         public void setTransitionGroup(ViewGroup viewGroup, boolean transitionGroup) {
             TransitionHelperApi21.setTransitionGroup(viewGroup, transitionGroup);
         }
+
+        @Override
+        public Object createChangeTransform() {
+            return TransitionHelperApi21.createChangeTransform();
+        }
+
     }
 
     static {
@@ -635,6 +671,10 @@ public final class TransitionHelper {
 
     public static Object createChangeBounds(boolean reparent) {
         return sImpl.createChangeBounds(reparent);
+    }
+
+    public static Object createChangeTransform() {
+        return sImpl.createChangeTransform();
     }
 
     public static void setChangeBoundsStartDelay(Object changeBounds, View view, int startDelay) {
@@ -780,7 +820,31 @@ public final class TransitionHelper {
         return sImpl.createFadeAndShortSlide(edge);
     }
 
+    public static Object createFadeAndShortSlide(int edge, float distance) {
+        return sImpl.createFadeAndShortSlide(edge, distance);
+    }
+
+    public static void beginDelayedTransition(ViewGroup sceneRoot, Object transitionObject) {
+        sImpl.beginDelayedTransition(sceneRoot, transitionObject);
+    }
+
     public static void setTransitionGroup(ViewGroup viewGroup, boolean transitionGroup) {
         sImpl.setTransitionGroup(viewGroup, transitionGroup);
+    }
+
+    /**
+     * @deprecated Use static calls.
+     */
+    @Deprecated
+    public static TransitionHelper getInstance() {
+        return new TransitionHelper();
+    }
+
+    /**
+     * @deprecated Use {@link #addTransitionListener(Object, TransitionListener)}
+     */
+    @Deprecated
+    public static void setTransitionListener(Object transition, TransitionListener listener) {
+        sImpl.addTransitionListener(transition, listener);
     }
 }

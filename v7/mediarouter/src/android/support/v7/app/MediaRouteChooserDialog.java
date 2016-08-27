@@ -25,6 +25,7 @@ import android.content.SharedPreferences;
 import android.content.res.TypedArray;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
 import android.support.annotation.NonNull;
@@ -72,6 +73,8 @@ public class MediaRouteChooserDialog extends Dialog {
     private RouteAdapter mAdapter;
     private ListView mListView;
     private boolean mAttachedToWindow;
+    private AsyncTask<Void, Void, Void> mRefreshRoutesTask;
+    private AsyncTask<Void, Void, Void> mOnItemClickTask;
 
     public MediaRouteChooserDialog(Context context) {
         this(context, 0);
@@ -147,7 +150,8 @@ public class MediaRouteChooserDialog extends Dialog {
      * @return True if the route should be included in the chooser dialog.
      */
     public boolean onFilterRoute(@NonNull MediaRouter.RouteInfo route) {
-        return !route.isDefault() && route.isEnabled() && route.matchesSelector(mSelector);
+        return !route.isDefaultOrBluetooth() && route.isEnabled()
+                && route.matchesSelector(mSelector);
     }
 
     @Override
@@ -197,12 +201,40 @@ public class MediaRouteChooserDialog extends Dialog {
      */
     public void refreshRoutes() {
         if (mAttachedToWindow) {
-            mRoutes.clear();
-            mRoutes.addAll(mRouter.getRoutes());
-            onFilterRoutes(mRoutes);
-            RouteComparator.loadRouteUsageScores(getContext(), mRoutes);
-            Collections.sort(mRoutes, RouteComparator.sInstance);
-            mAdapter.notifyDataSetChanged();
+            if (mRefreshRoutesTask != null) {
+                mRefreshRoutesTask.cancel(true);
+                mRefreshRoutesTask = null;
+            }
+            mRefreshRoutesTask = new AsyncTask<Void, Void, Void>() {
+                private ArrayList<MediaRouter.RouteInfo> mNewRoutes;
+
+                @Override
+                protected void onPreExecute() {
+                    mNewRoutes = new ArrayList<>(mRouter.getRoutes());
+                    onFilterRoutes(mNewRoutes);
+                }
+
+                @Override
+                protected Void doInBackground(Void... params) {
+                    // In API 4 ~ 10, AsyncTasks are running in parallel. Needs synchronization.
+                    synchronized (MediaRouteChooserDialog.this) {
+                        if (!isCancelled()) {
+                            RouteComparator.getInstance(getContext())
+                                    .loadRouteUsageScores(mNewRoutes);
+                        }
+                    }
+                    return null;
+                }
+
+                @Override
+                protected void onPostExecute(Void params) {
+                    mRoutes.clear();
+                    mRoutes.addAll(mNewRoutes);
+                    Collections.sort(mRoutes, RouteComparator.sInstance);
+                    mAdapter.notifyDataSetChanged();
+                    mRefreshRoutesTask = null;
+                }
+            }.execute();
         }
     }
 
@@ -210,7 +242,6 @@ public class MediaRouteChooserDialog extends Dialog {
             implements ListView.OnItemClickListener {
         private final LayoutInflater mInflater;
         private final Drawable mDefaultIcon;
-        private final Drawable mBluetoothIcon;
         private final Drawable mTvIcon;
         private final Drawable mSpeakerIcon;
         private final Drawable mSpeakerGroupIcon;
@@ -220,15 +251,13 @@ public class MediaRouteChooserDialog extends Dialog {
             mInflater = LayoutInflater.from(context);
             TypedArray styledAttributes = getContext().obtainStyledAttributes(new int[] {
                     R.attr.mediaRouteDefaultIconDrawable,
-                    R.attr.mediaRouteBluetoothIconDrawable,
                     R.attr.mediaRouteTvIconDrawable,
                     R.attr.mediaRouteSpeakerIconDrawable,
                     R.attr.mediaRouteSpeakerGroupIconDrawable});
             mDefaultIcon = styledAttributes.getDrawable(0);
-            mBluetoothIcon = styledAttributes.getDrawable(1);
-            mTvIcon = styledAttributes.getDrawable(2);
-            mSpeakerIcon = styledAttributes.getDrawable(3);
-            mSpeakerGroupIcon = styledAttributes.getDrawable(4);
+            mTvIcon = styledAttributes.getDrawable(1);
+            mSpeakerIcon = styledAttributes.getDrawable(2);
+            mSpeakerGroupIcon = styledAttributes.getDrawable(3);
             styledAttributes.recycle();
         }
 
@@ -277,11 +306,27 @@ public class MediaRouteChooserDialog extends Dialog {
 
         @Override
         public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-            MediaRouter.RouteInfo route = getItem(position);
-            if (route.isEnabled()) {
-                route.select();
-                RouteComparator.storeRouteUsageScores(getContext(), route.getId());
-                dismiss();
+            final MediaRouter.RouteInfo route = getItem(position);
+            if (route.isEnabled() && mOnItemClickTask == null) {
+                mOnItemClickTask = new AsyncTask<Void, Void, Void>() {
+                    @Override
+                    protected void onPreExecute() {
+                        route.select();
+                    }
+
+                    @Override
+                    protected Void doInBackground(Void... params) {
+                        RouteComparator.getInstance(getContext())
+                                .storeRouteUsageScores(route.getId());
+                        return null;
+                    }
+
+                    @Override
+                    protected void onPostExecute(Void params) {
+                        dismiss();
+                        mOnItemClickTask = null;
+                    }
+                }.execute();
             }
         }
 
@@ -305,8 +350,6 @@ public class MediaRouteChooserDialog extends Dialog {
         private Drawable getDefaultIconDrawable(MediaRouter.RouteInfo route) {
             // If the type of the receiver device is specified, use it.
             switch (route.getDeviceType()) {
-                case MediaRouter.RouteInfo.DEVICE_TYPE_BLUETOOTH:
-                    return mBluetoothIcon;
                 case  MediaRouter.RouteInfo.DEVICE_TYPE_TV:
                     return mTvIcon;
                 case MediaRouter.RouteInfo.DEVICE_TYPE_SPEAKER:
@@ -317,9 +360,6 @@ public class MediaRouteChooserDialog extends Dialog {
             if (route instanceof MediaRouter.RouteGroup) {
                 // Only speakers can be grouped for now.
                 return mSpeakerGroupIcon;
-            }
-            if (route.isDeviceTypeBluetooth()) {
-                return mBluetoothIcon;
             }
             return mDefaultIcon;
         }
@@ -356,8 +396,21 @@ public class MediaRouteChooserDialog extends Dialog {
         private static final float MIN_USAGE_SCORE = 0.1f;
         private static final float USAGE_SCORE_DECAY_FACTOR = 0.95f;
 
-        public static final RouteComparator sInstance = new RouteComparator();
-        public static final HashMap<String, Float> sRouteUsageScoreMap = new HashMap();
+        private static RouteComparator sInstance;
+        private final HashMap<String, Float> mRouteUsageScoreMap;
+        private final SharedPreferences mPreferences;
+
+        public static RouteComparator getInstance(Context context) {
+            if (sInstance == null) {
+                sInstance = new RouteComparator(context);
+            }
+            return sInstance;
+        }
+
+        private RouteComparator(Context context) {
+            mRouteUsageScoreMap = new HashMap();
+            mPreferences = PreferenceManager.getDefaultSharedPreferences(context);
+        }
 
         @Override
         public int compare(MediaRouter.RouteInfo lhs, MediaRouter.RouteInfo rhs) {
@@ -366,18 +419,11 @@ public class MediaRouteChooserDialog extends Dialog {
             } else if (rhs == null) {
                 return 1;
             }
-            if (lhs.isDeviceTypeBluetooth()) {
-                if (!rhs.isDeviceTypeBluetooth()) {
-                    return 1;
-                }
-            } else if (rhs.isDeviceTypeBluetooth()) {
-                return -1;
-            }
-            Float lhsUsageScore = sRouteUsageScoreMap.get(lhs.getId());
+            Float lhsUsageScore = mRouteUsageScoreMap.get(lhs.getId());
             if (lhsUsageScore == null) {
                 lhsUsageScore = 0f;
             }
-            Float rhsUsageScore = sRouteUsageScoreMap.get(rhs.getId());
+            Float rhsUsageScore = mRouteUsageScoreMap.get(rhs.getId());
             if (rhsUsageScore == null) {
                 rhsUsageScore = 0f;
             }
@@ -387,21 +433,19 @@ public class MediaRouteChooserDialog extends Dialog {
             return lhs.getName().compareTo(rhs.getName());
         }
 
-        private static void loadRouteUsageScores(
-                Context context, List<MediaRouter.RouteInfo> routes) {
-            sRouteUsageScoreMap.clear();
-            SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
+        private void loadRouteUsageScores(List<MediaRouter.RouteInfo> routes) {
             for (MediaRouter.RouteInfo route : routes) {
-                sRouteUsageScoreMap.put(route.getId(),
-                        preferences.getFloat(PREF_USAGE_SCORE_PREFIX + route.getId(), 0f));
+                if (mRouteUsageScoreMap.get(route.getId()) == null) {
+                    mRouteUsageScoreMap.put(route.getId(),
+                            mPreferences.getFloat(PREF_USAGE_SCORE_PREFIX + route.getId(), 0f));
+                }
             }
         }
 
-        private static void storeRouteUsageScores(Context context, String selectedRouteId) {
-            SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
-            SharedPreferences.Editor prefEditor = preferences.edit();
-            List<String> routeIds = new ArrayList<String>(
-                    Arrays.asList(preferences.getString(PREF_ROUTE_IDS, "").split(",")));
+        private void storeRouteUsageScores(String selectedRouteId) {
+            SharedPreferences.Editor prefEditor = mPreferences.edit();
+            List<String> routeIds = new ArrayList<>(
+                    Arrays.asList(mPreferences.getString(PREF_ROUTE_IDS, "").split(",")));
             if (!routeIds.contains(selectedRouteId)) {
                 routeIds.add(selectedRouteId);
             }
@@ -412,14 +456,16 @@ public class MediaRouteChooserDialog extends Dialog {
                 // 2) 0, if usageScore * USAGE_SCORE_DECAY_FACTOR < MIN_USAGE_SCORE, or
                 // 3) usageScore * USAGE_SCORE_DECAY_FACTOR, otherwise,
                 String routeUsageScoreKey = PREF_USAGE_SCORE_PREFIX + routeId;
-                float newUsageScore = preferences.getFloat(routeUsageScoreKey, 0f)
+                float newUsageScore = mPreferences.getFloat(routeUsageScoreKey, 0f)
                         * USAGE_SCORE_DECAY_FACTOR;
                 if (selectedRouteId.equals(routeId)) {
                     newUsageScore += 1f;
                 }
                 if (newUsageScore < MIN_USAGE_SCORE) {
+                    mRouteUsageScoreMap.remove(routeId);
                     prefEditor.remove(routeId);
                 } else {
+                    mRouteUsageScoreMap.put(routeId, newUsageScore);
                     prefEditor.putFloat(routeUsageScoreKey, newUsageScore);
                     if (routeIdsBuilder.length() > 0) {
                         routeIdsBuilder.append(',');

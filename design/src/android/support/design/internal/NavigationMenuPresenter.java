@@ -19,6 +19,7 @@ package android.support.design.internal;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.Resources;
+import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
@@ -85,8 +86,6 @@ public class NavigationMenuPresenter implements MenuPresenter {
         mLayoutInflater = LayoutInflater.from(context);
         mMenu = menu;
         Resources res = context.getResources();
-        mPaddingTopDefault = res.getDimensionPixelOffset(
-                R.dimen.design_navigation_padding_top_default);
         mPaddingSeparator = res.getDimensionPixelOffset(
                 R.dimen.design_navigation_separator_vertical_padding);
     }
@@ -239,17 +238,28 @@ public class NavigationMenuPresenter implements MenuPresenter {
         updateMenuView(false);
     }
 
+    @Nullable
     public Drawable getItemBackground() {
         return mItemBackground;
     }
 
-    public void setItemBackground(Drawable itemBackground) {
+    public void setItemBackground(@Nullable Drawable itemBackground) {
         mItemBackground = itemBackground;
+        updateMenuView(false);
     }
 
     public void setUpdateSuspended(boolean updateSuspended) {
         if (mAdapter != null) {
             mAdapter.setUpdateSuspended(updateSuspended);
+        }
+    }
+
+    public void setPaddingTopDefault(int paddingTopDefault) {
+        if (mPaddingTopDefault != paddingTopDefault) {
+            mPaddingTopDefault = paddingTopDefault;
+            if (mHeaderLayout.getChildCount() == 0) {
+                mMenuView.setPadding(0, mPaddingTopDefault, 0, mMenuView.getPaddingBottom());
+            }
         }
     }
 
@@ -508,7 +518,7 @@ public class NavigationMenuPresenter implements MenuPresenter {
                 MenuItem item = textItem.getMenuItem();
                 if (item.getIcon() == null) {
                     if (mTransparentIcon == null) {
-                        mTransparentIcon = new ColorDrawable(android.R.color.transparent);
+                        mTransparentIcon = new ColorDrawable(Color.TRANSPARENT);
                     }
                     item.setIcon(mTransparentIcon);
                 }

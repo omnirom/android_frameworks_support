@@ -17,6 +17,9 @@ package android.support.v7.widget;
 
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.os.Build;
+import android.support.v4.content.res.ConfigurationHelper;
+import android.support.v4.view.ViewCompat;
 import android.support.v7.appcompat.R;
 import android.util.AttributeSet;
 import android.view.Gravity;
@@ -30,6 +33,9 @@ import android.widget.LinearLayout;
  * @hide
  */
 public class ButtonBarLayout extends LinearLayout {
+    // Whether to allow vertically stacked button bars. This is disabled for
+    // configurations with a small (e.g. less than 320dp) screen height. -->
+    private static final int ALLOW_STACKING_MIN_HEIGHT_DP = 320;
 
     /** Whether the current configuration allows stacking. */
     private boolean mAllowStacking;
@@ -37,8 +43,12 @@ public class ButtonBarLayout extends LinearLayout {
 
     public ButtonBarLayout(Context context, AttributeSet attrs) {
         super(context, attrs);
+        final boolean allowStackingDefault =
+                ConfigurationHelper.getScreenHeightDp(getResources())
+                        >= ALLOW_STACKING_MIN_HEIGHT_DP;
         final TypedArray ta = context.obtainStyledAttributes(attrs, R.styleable.ButtonBarLayout);
-        mAllowStacking = ta.getBoolean(R.styleable.ButtonBarLayout_allowStacking, false);
+        mAllowStacking = ta.getBoolean(R.styleable.ButtonBarLayout_allowStacking,
+                allowStackingDefault);
         ta.recycle();
     }
 
@@ -76,9 +86,24 @@ public class ButtonBarLayout extends LinearLayout {
         }
         super.onMeasure(initialWidthMeasureSpec, heightMeasureSpec);
         if (mAllowStacking && !isStacked()) {
-            final int measuredWidth = getMeasuredWidthAndState();
-            final int measuredWidthState = measuredWidth & MEASURED_STATE_MASK;
-            if (measuredWidthState == MEASURED_STATE_TOO_SMALL) {
+            final boolean stack;
+
+            if (Build.VERSION.SDK_INT >= 11) {
+                // On API v11+ we can use MEASURED_STATE_MASK and MEASURED_STATE_TOO_SMALL
+                final int measuredWidth = ViewCompat.getMeasuredWidthAndState(this);
+                final int measuredWidthState = measuredWidth & ViewCompat.MEASURED_STATE_MASK;
+                stack = measuredWidthState == ViewCompat.MEASURED_STATE_TOO_SMALL;
+            } else {
+                // Before that we need to manually total up the children's preferred width.
+                // This isn't perfect but works well enough for a workaround.
+                int childWidthTotal = 0;
+                for (int i = 0, count = getChildCount(); i < count; i++) {
+                    childWidthTotal += getChildAt(i).getMeasuredWidth();
+                }
+                stack = (childWidthTotal + getPaddingLeft() + getPaddingRight()) > widthSize;
+            }
+
+            if (stack) {
                 setStacked(true);
                 // Measure again in the new orientation.
                 needsRemeasure = true;

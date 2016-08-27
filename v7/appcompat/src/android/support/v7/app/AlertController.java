@@ -182,6 +182,9 @@ class AlertController {
         mListItemLayout = a.getResourceId(R.styleable.AlertDialog_listItemLayout, 0);
 
         a.recycle();
+
+        /* We use a custom title so never request a window title */
+        di.supportRequestWindowFeature(Window.FEATURE_NO_TITLE);
     }
 
     static boolean canTextInput(View v) {
@@ -207,8 +210,6 @@ class AlertController {
     }
 
     public void installContent() {
-        /* We use a custom title so never request a window title */
-        mDialog.supportRequestWindowFeature(Window.FEATURE_NO_TITLE);
         final int contentView = selectContentView();
         mDialog.setContentView(contentView);
         setupView();
@@ -337,6 +338,7 @@ class AlertController {
 
         if (mIconView != null) {
             if (resId != 0) {
+                mIconView.setVisibility(View.VISIBLE);
                 mIconView.setImageResource(mIconId);
             } else {
                 mIconView.setVisibility(View.GONE);
@@ -355,6 +357,7 @@ class AlertController {
 
         if (mIconView != null) {
             if (icon != null) {
+                mIconView.setVisibility(View.VISIBLE);
                 mIconView.setImageDrawable(icon);
             } else {
                 mIconView.setVisibility(View.GONE);

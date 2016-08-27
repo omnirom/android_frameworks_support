@@ -49,15 +49,42 @@ public class LoggingItemAnimator extends DefaultItemAnimator {
             if (log.viewHolder == viewHolder) {
                 return true;
             }
+            if (log instanceof AnimateChange) {
+                if (((AnimateChange) log).newHolder == viewHolder) {
+                    return true;
+                }
+            }
         }
         return false;
     }
+
+    @NonNull
+    @Override
+    public ItemHolderInfo recordPreLayoutInformation(@NonNull RecyclerView.State state,
+            @NonNull RecyclerView.ViewHolder viewHolder,
+            @AdapterChanges int changeFlags, @NonNull List<Object> payloads) {
+        BaseRecyclerViewAnimationsTest.LoggingInfo
+                loggingInfo = new BaseRecyclerViewAnimationsTest.LoggingInfo(viewHolder, changeFlags, payloads);
+        return loggingInfo;
+    }
+
+    @NonNull
+    @Override
+    public ItemHolderInfo recordPostLayoutInformation(@NonNull RecyclerView.State state,
+            @NonNull RecyclerView.ViewHolder viewHolder) {
+        BaseRecyclerViewAnimationsTest.LoggingInfo
+                loggingInfo = new BaseRecyclerViewAnimationsTest.LoggingInfo(viewHolder, 0, null);
+        return loggingInfo;
+    }
+
 
     @Override
     public boolean animateDisappearance(@NonNull RecyclerView.ViewHolder viewHolder,
             @NonNull ItemHolderInfo preLayoutInfo, ItemHolderInfo postLayoutInfo) {
         mAnimateDisappearanceList
-                .add(new AnimateDisappearance(viewHolder, null, null));
+                .add(new AnimateDisappearance(viewHolder,
+                        (BaseRecyclerViewAnimationsTest.LoggingInfo) preLayoutInfo,
+                        (BaseRecyclerViewAnimationsTest.LoggingInfo) postLayoutInfo));
         return super.animateDisappearance(viewHolder, preLayoutInfo, postLayoutInfo);
     }
 
@@ -66,7 +93,9 @@ public class LoggingItemAnimator extends DefaultItemAnimator {
             ItemHolderInfo preLayoutInfo,
             @NonNull ItemHolderInfo postLayoutInfo) {
         mAnimateAppearanceList
-                .add(new AnimateAppearance(viewHolder, null, null));
+                .add(new AnimateAppearance(viewHolder,
+                        (BaseRecyclerViewAnimationsTest.LoggingInfo) preLayoutInfo,
+                        (BaseRecyclerViewAnimationsTest.LoggingInfo) postLayoutInfo));
         return super.animateAppearance(viewHolder, preLayoutInfo, postLayoutInfo);
     }
 
@@ -75,7 +104,9 @@ public class LoggingItemAnimator extends DefaultItemAnimator {
             @NonNull ItemHolderInfo preInfo,
             @NonNull ItemHolderInfo postInfo) {
         mAnimatePersistenceList
-                .add(new AnimatePersistence(viewHolder, null, null));
+                .add(new AnimatePersistence(viewHolder,
+                        (BaseRecyclerViewAnimationsTest.LoggingInfo) preInfo,
+                        (BaseRecyclerViewAnimationsTest.LoggingInfo) postInfo));
         return super.animatePersistence(viewHolder, preInfo, postInfo);
     }
 
@@ -84,7 +115,9 @@ public class LoggingItemAnimator extends DefaultItemAnimator {
             @NonNull RecyclerView.ViewHolder newHolder, @NonNull ItemHolderInfo preInfo,
             @NonNull ItemHolderInfo postInfo) {
         mAnimateChangeList
-                .add(new AnimateChange(oldHolder, newHolder, null, null));
+                .add(new AnimateChange(oldHolder, newHolder,
+                        (BaseRecyclerViewAnimationsTest.LoggingInfo) preInfo,
+                        (BaseRecyclerViewAnimationsTest.LoggingInfo) postInfo));
         return super.animateChange(oldHolder, newHolder, preInfo, postInfo);
     }
 
